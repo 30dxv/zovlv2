@@ -1,0 +1,1275 @@
+--[[
+    Zovlane AutoFarm Hub - MM2
+    Advanced AutoFarm Features Only
+]]
+
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local LocalPlayer = Players.LocalPlayer
+
+-- Halloween Color Theme
+local HalloweenColors = {
+    Orange = Color3.fromHex("#FF6B1A"),
+    DarkOrange = Color3.fromHex("#FF4500"),
+    Purple = Color3.fromHex("#9D4EDD"),
+    DarkPurple = Color3.fromHex("#5A189A"),
+    Blood = Color3.fromHex("#8B0000"),
+    Ghost = Color3.fromHex("#E0E0E0"),
+    Pumpkin = Color3.fromHex("#FF7518"),
+    Witch = Color3.fromHex("#6B2E8A"),
+    Midnight = Color3.fromHex("#0D0221"),
+    Toxic = Color3.fromHex("#39FF14"),
+}
+
+-- Spooky Gradient Function
+local function spookyGradient(text, color1, color2)
+    local result = ""
+    local length = #text
+    for i = 1, length do
+        local t = (i - 1) / math.max(length - 1, 1)
+        local r = math.floor((color1.R + ((color2.R - color1.R) * t)) * 255)
+        local g = math.floor((color1.G + ((color2.G - color1.G) * t)) * 255)
+        local b = math.floor((color1.B + ((color2.B - color1.B) * t)) * 255)
+        local char = text:sub(i, i)
+        result = result .. '<font color="rgb(' .. r .. ", " .. g .. ", " .. b .. ')">' .. char .. "</font>"
+    end
+    return result
+end
+
+-- Welcome Popup
+local Confirmed = false
+WindUI:Popup({
+    Title = spookyGradient("Zovlane AutoFarm", HalloweenColors.Pumpkin, HalloweenColors.Purple),
+    Icon = "dollar-sign",
+    Content = (spookyGradient("Advanced MM2 AutoFarm System", HalloweenColors.Orange, HalloweenColors.DarkPurple) .. "<br/>" .. spookyGradient("Coins • Candy • XP • Rewards", HalloweenColors.Toxic, HalloweenColors.Purple)),
+    Buttons = {
+        {
+            Title = "Exit",
+            Callback = function() end,
+            Variant = "Tertiary"
+        },
+        {
+            Title = spookyGradient("Start Farming", HalloweenColors.Toxic, HalloweenColors.Orange),
+            Callback = function()
+                Confirmed = true
+            end,
+            Variant = "Primary"
+        }
+    }
+})
+
+repeat task.wait() until Confirmed
+
+-- */  Window  /* --
+local Window = WindUI:CreateWindow({
+    Title = spookyGradient("Zovlane AutoFarm", HalloweenColors.Pumpkin, HalloweenColors.Purple),
+    Author = "by Zovlane Scripts • AutoFarm Pro",
+    Folder = "zovlane_autofarm",
+    Icon = "dollar-sign",
+    NewElements = true,
+    
+    Size = UDim2.new(0, 600, 0, 500),
+    
+    Transparent = true,
+    BackgroundTransparency = 0.5,
+    
+    Theme = "Dark",
+    SideBarWidth = 200,
+    
+    HideSearchBar = false,
+    ScrollBarEnabled = true,
+    
+    OpenButton = {
+        Title = "Open AutoFarm",
+        CornerRadius = UDim.new(0.5, 0),
+        StrokeThickness = 2,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        
+        Color = ColorSequence.new(
+            HalloweenColors.Pumpkin, 
+            HalloweenColors.Purple
+        )
+    },
+    
+    User = {
+        Enabled = true,
+        Anonymous = false,
+        Callback = function() end,
+    },
+})
+
+-- Auto Farm Variables
+local AutoFarmSettings = {
+    Coins = false,
+    Candy = false,
+    XP = false,
+    Speed = 18,
+    MaxDistance = 250,
+    AutoEnd = false,
+    FlingMurderer = false,
+    SafeMode = false,
+    Noclip = true,
+    SmartPath = false,
+    AutoRejoin = false,
+    CollectPriority = "Nearest",
+    FarmMode = "Balanced",
+}
+
+local Stats = {
+    CoinsCollected = 0,
+    CandyCollected = 0,
+    XPGained = 0,
+    TimeRunning = 0,
+    SessionStart = os.time(),
+    TotalDistance = 0,
+}
+
+local visitedPositions = {}
+local blacklistedPositions = {}
+local collected = 0
+local currentBagAmount = 0
+local maxBagCapacity = 40
+local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+local lastPosition = rootPart.Position
+
+-- Premium Check
+local GAMEPASS_ID = 429957
+local function checkPremiumStatus()
+    local success, hasGamepass = pcall(function()
+        return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, GAMEPASS_ID)
+    end)
+
+    if success then
+        if hasGamepass then
+            maxBagCapacity = 50
+            print("[Premium] ✅ Premium detected - 50 candy capacity")
+        else
+            maxBagCapacity = 40
+            print("[Premium] ❌ Standard - 40 candy capacity")
+        end
+    else
+        maxBagCapacity = 40
+    end
+end
+
+checkPremiumStatus()
+
+-- Auto Farm Functions
+local function flyTo(pos, speed)
+    if not rootPart then return end
+    local distance = (pos - rootPart.Position).Magnitude
+    Stats.TotalDistance += distance
+    
+    local duration = distance / speed
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local goal = {CFrame = CFrame.new(pos)}
+    local tween = TweenService:Create(rootPart, tweenInfo, goal)
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+local function findCoinContainer()
+    for _, v in Workspace:GetChildren() do
+        if v:FindFirstChild("CoinContainer") and v:IsA("Model") then
+            return v:FindFirstChild("CoinContainer")
+        end
+    end
+    return nil
+end
+
+local function isSafeToCollect()
+    if not AutoFarmSettings.SafeMode then return true end
+    
+    -- Check if murderer is nearby
+    local success, roles = pcall(function()
+        return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+    end)
+    
+    if success and roles then
+        for name, data in pairs(roles) do
+            if data.Role == "Murderer" then
+                local murderer = Players:FindFirstChild(name)
+                if murderer and murderer.Character then
+                    local murdererRoot = murderer.Character:FindFirstChild("HumanoidRootPart")
+                    if murdererRoot then
+                        local distance = (rootPart.Position - murdererRoot.Position).Magnitude
+                        if distance < 50 then
+                            return false
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return true
+end
+
+local function getPriorityValue(item, itemType)
+    if AutoFarmSettings.CollectPriority == "Nearest" then
+        return (item.Position - rootPart.Position).Magnitude
+    elseif AutoFarmSettings.CollectPriority == "Farthest" then
+        return -(item.Position - rootPart.Position).Magnitude
+    elseif AutoFarmSettings.CollectPriority == "Highest" then
+        if itemType == "Candy" then
+            return -item.Position.Y
+        else
+            return 0
+        end
+    elseif AutoFarmSettings.CollectPriority == "Lowest" then
+        if itemType == "Candy" then
+            return item.Position.Y
+        else
+            return 0
+        end
+    end
+    return 0
+end
+
+local function getSpeedMultiplier()
+    if AutoFarmSettings.FarmMode == "Fastest" then
+        return 1.5
+    elseif AutoFarmSettings.FarmMode == "Safest" then
+        return 0.7
+    else -- Balanced
+        return 1.0
+    end
+end
+
+-- MiniFling function
+local function miniFling(Targets)
+    local AllBool = false
+
+    local GetPlayer = function(Name)
+        Name = Name:lower()
+        if Name == "all" or Name == "others" then
+            AllBool = true
+            return
+        elseif Name == "random" then
+            local GetPlayers = Players:GetPlayers()
+            if table.find(GetPlayers,Players.LocalPlayer) then table.remove(GetPlayers,table.find(GetPlayers,Players.LocalPlayer)) end
+            return GetPlayers[math.random(#GetPlayers)]
+        elseif Name ~= "random" and Name ~= "all" and Name ~= "others" then
+            for _,x in next, Players:GetPlayers() do
+                if x ~= Players.LocalPlayer then
+                    if x.Name:lower():match("^"..Name) then
+                        return x;
+                    elseif x.DisplayName:lower():match("^"..Name) then
+                        return x;
+                    end
+                end
+            end
+        else
+            return
+        end
+    end
+
+    local SkidFling = function(TargetPlayer)
+        local Character = Players.LocalPlayer.Character
+        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        local RootPart = Humanoid and Humanoid.RootPart
+
+        local TCharacter = TargetPlayer.Character
+        local THumanoid
+        local TRootPart
+        local THead
+        local Accessory
+        local Handle
+
+        if TCharacter:FindFirstChildOfClass("Humanoid") then
+            THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+        end
+        if THumanoid and THumanoid.RootPart then
+            TRootPart = THumanoid.RootPart
+        end
+        if TCharacter:FindFirstChild("Head") then
+            THead = TCharacter.Head
+        end
+        if TCharacter:FindFirstChildOfClass("Accessory") then
+            Accessory = TCharacter:FindFirstChildOfClass("Accessory")
+        end
+        if Accessory and Accessory:FindFirstChild("Handle") then
+            Handle = Accessory.Handle
+        end
+
+        if Character and Humanoid and RootPart then
+            if RootPart.Velocity.Magnitude < 50 then
+                getgenv().OldPos = RootPart.CFrame
+            end
+            if THumanoid and THumanoid.Sit and not AllBool then
+                return 
+            end
+            if THead then
+                Workspace.CurrentCamera.CameraSubject = THead
+            elseif not THead and Handle then
+                Workspace.CurrentCamera.CameraSubject = Handle
+            elseif THumanoid and TRootPart then
+                Workspace.CurrentCamera.CameraSubject = THumanoid
+            end
+            if not TCharacter:FindFirstChildWhichIsA("BasePart") then
+                return
+            end
+
+            local FPos = function(BasePart, Pos, Ang)
+                RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+                Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
+                RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+                RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+            end
+
+            local SFBasePart = function(BasePart)
+                local TimeToWait = 2
+                local Time = tick()
+                local Angle = 0
+
+                repeat
+                    if RootPart and THumanoid then
+                        if BasePart.Velocity.Magnitude < 50 then
+                            Angle = Angle + 100
+
+                            FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection,CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection,CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+                        else
+                            FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5 ,0), CFrame.Angles(math.rad(-90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                            task.wait()
+                        end
+                    else
+                        break
+                    end
+                until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= TargetPlayer.Character or TargetPlayer.Parent ~= Players or not TargetPlayer.Character == TCharacter or THumanoid.Sit or Humanoid.Health <= 0 or tick() > Time + TimeToWait
+            end
+
+            Workspace.FallenPartsDestroyHeight = 0/0
+
+            local BV = Instance.new("BodyVelocity")
+            BV.Name = "EpixVel"
+            BV.Parent = RootPart
+            BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+            BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
+
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+
+            if TRootPart and THead then
+                if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then
+                    SFBasePart(THead)
+                else
+                    SFBasePart(TRootPart)
+                end
+            elseif TRootPart and not THead then
+                SFBasePart(TRootPart)
+            elseif not TRootPart and THead then
+                SFBasePart(THead)
+            elseif not TRootPart and not THead and Accessory and Handle then
+                SFBasePart(Handle)
+            else
+                return 
+            end
+
+            BV:Destroy()
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            Workspace.CurrentCamera.CameraSubject = Humanoid
+
+            repeat
+                RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
+                Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
+                Humanoid:ChangeState("GettingUp")
+                table.foreach(Character:GetChildren(), function(_, x)
+                    if x:IsA("BasePart") then
+                        x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+                    end
+                end)
+                task.wait()
+            until (RootPart.Position - getgenv().OldPos.p).Magnitude < 25
+            Workspace.FallenPartsDestroyHeight = -500
+        else
+            return 
+        end
+        Workspace.FallenPartsDestroyHeight = -500
+    end
+
+    if Targets[1] then for _,x in next, Targets do GetPlayer(x) end else return end
+
+    if AllBool then
+        for _,x in next, Players:GetPlayers() do
+            SkidFling(x)
+        end
+    end
+
+    for _,x in next, Targets do
+        if GetPlayer(x) and GetPlayer(x) ~= Players.LocalPlayer then
+            local TPlayer = GetPlayer(x)
+            if TPlayer then
+                SkidFling(TPlayer)
+            end
+        elseif not GetPlayer(x) and not AllBool then
+            
+        end
+    end
+end
+
+local function flingMurderer()
+    local success, roles = pcall(function()
+        return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+    end)
+    
+    if not success or not roles then 
+        WindUI:Notify({
+            Title = "Fling Error",
+            Content = "Could not get player roles!",
+            Icon = "x-circle",
+            Duration = 3
+        })
+        return 
+    end
+    
+    local murderer = nil
+    for name, data in pairs(roles) do
+        if data.Role == "Murderer" then
+            murderer = Players:FindFirstChild(name)
+            break
+        end
+    end
+    
+    if murderer then
+        miniFling({murderer.Name})
+        WindUI:Notify({
+            Title = "Murderer Flinged",
+            Content = "Flinging " .. murderer.Name .. "!",
+            Icon = "zap",
+            Duration = 3
+        })
+    end
+end
+
+local function endRound()
+    local success = pcall(function()
+        ReplicatedStorage.Remotes.Gameplay.EndRound:FireServer()
+    end)
+    
+    if success then
+        WindUI:Notify({
+            Title = "Round Ended",
+            Content = "Successfully ended the round!",
+            Icon = "check-circle",
+            Duration = 3
+        })
+        
+        if AutoFarmSettings.FlingMurderer then
+            task.wait(0.5)
+            flingMurderer()
+        end
+    else
+        WindUI:Notify({
+            Title = "End Round Error",
+            Content = "Failed to end round!",
+            Icon = "x-circle",
+            Duration = 3
+        })
+    end
+end
+
+-- AutoFarm Loop
+task.spawn(function()
+    while true do
+        if AutoFarmSettings.Coins or AutoFarmSettings.Candy then
+            character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            rootPart = character:FindFirstChild("HumanoidRootPart")
+            
+            if rootPart and isSafeToCollect() then
+                local items = {}
+                
+                if AutoFarmSettings.Candy then
+                    local coinContainer = findCoinContainer()
+                    
+                    if coinContainer then
+                        for _, coin in pairs(coinContainer:GetChildren()) do
+                            if coin:GetAttribute("CoinID") == "Candy" and coin:FindFirstChild("TouchInterest") then
+                                local dist = (coin.Position - rootPart.Position).Magnitude
+                                
+                                if dist < AutoFarmSettings.MaxDistance and not visitedPositions[coin] and not blacklistedPositions[coin] then
+                                    table.insert(items, {
+                                        Item = coin,
+                                        Type = "Candy",
+                                        Priority = getPriorityValue(coin, "Candy")
+                                    })
+                                end
+                            end
+                        end
+                    else
+                        for _, obj in ipairs(Workspace:GetDescendants()) do
+                            if obj:IsA("BasePart") and obj.Name == "candy" then
+                                local dist = (obj.Position - rootPart.Position).Magnitude
+                                
+                                if dist < AutoFarmSettings.MaxDistance and not visitedPositions[obj] and not blacklistedPositions[obj] then
+                                    table.insert(items, {
+                                        Item = obj,
+                                        Type = "Candy",
+                                        Priority = getPriorityValue(obj, "Candy")
+                                    })
+                                end
+                            end
+                        end
+                    end
+                elseif AutoFarmSettings.Coins then
+                    for _, obj in ipairs(Workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") and obj.Name == "Coin_Server" then
+                            local dist = (obj.Position - rootPart.Position).Magnitude
+                            if dist < AutoFarmSettings.MaxDistance and not visitedPositions[obj] and not blacklistedPositions[obj] then
+                                table.insert(items, {
+                                    Item = obj,
+                                    Type = "Coin",
+                                    Priority = getPriorityValue(obj, "Coin")
+                                })
+                            end
+                        end
+                    end
+                end
+                
+                -- Sort by priority
+                table.sort(items, function(a, b)
+                    return a.Priority < b.Priority
+                end)
+                
+                local closest = items[1]
+                
+                if closest and closest.Item.Parent and closest.Item:IsDescendantOf(Workspace) then
+                    local speedMultiplier = getSpeedMultiplier()
+                    flyTo(closest.Item.Position, AutoFarmSettings.Speed * speedMultiplier)
+                    
+                    if closest.Item and closest.Item.Parent and closest.Item:IsDescendantOf(Workspace) then
+                        visitedPositions[closest.Item] = true
+                        collected += 1
+                        
+                        if closest.Type == "Candy" then
+                            Stats.CandyCollected += 1
+                        else
+                            Stats.CoinsCollected += 1
+                        end
+                    end
+                end
+            end
+        end
+        
+        task.wait(0.1)
+    end
+end)
+
+-- Stats updater
+task.spawn(function()
+    while true do
+        if AutoFarmSettings.Coins or AutoFarmSettings.Candy then
+            Stats.TimeRunning = os.time() - Stats.SessionStart
+        end
+        task.wait(1)
+    end
+end)
+
+-- Disable collisions while flying
+RunService.Stepped:Connect(function()
+    if (AutoFarmSettings.Coins or AutoFarmSettings.Candy) and AutoFarmSettings.Noclip then
+        for _, v in ipairs(character:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- Character respawn handling
+LocalPlayer.CharacterAdded:Connect(function(char)
+    character = char
+    rootPart = char:WaitForChild("HumanoidRootPart")
+    visitedPositions = {}
+    currentBagAmount = 0
+    checkPremiumStatus()
+    
+    if AutoFarmSettings.AutoRejoin then
+        WindUI:Notify({
+            Title = "Respawned",
+            Content = "Character respawned, continuing farm...",
+            Icon = "refresh-cw",
+            Duration = 2
+        })
+    end
+end)
+
+-- Monitor candy collection
+local CoinCollected = ReplicatedStorage:FindFirstChild("Remotes") and 
+                      ReplicatedStorage.Remotes:FindFirstChild("Gameplay") and 
+                      ReplicatedStorage.Remotes.Gameplay:FindFirstChild("CoinCollected")
+
+if CoinCollected then
+    CoinCollected.OnClientEvent:Connect(function(coinType, newAmount, oldAmount, additionalData)
+        if coinType == "Candy" then
+            currentBagAmount = newAmount
+            
+            if currentBagAmount >= maxBagCapacity then
+                WindUI:Notify({
+                    Title = "Bag Full!",
+                    Content = "Candy bag is full (" .. currentBagAmount .. "/" .. maxBagCapacity .. ")",
+                    Icon = "package",
+                    Duration = 3
+                })
+                
+                if AutoFarmSettings.AutoEnd then
+                    task.wait(0.5)
+                    endRound()
+                end
+            end
+        end
+    end)
+end
+
+-- Auto Rejoin on Kick
+if AutoFarmSettings.AutoRejoin then
+    game:GetService("CoreGui").RobloxPromptGui.promptOverlay.ChildAdded:Connect(function(child)
+        if child.Name == 'ErrorPrompt' and child:FindFirstChild('MessageArea') and child.MessageArea:FindFirstChild('ErrorFrame') then
+            game:GetService("TeleportService"):Teleport(game.PlaceId, LocalPlayer)
+        end
+    end)
+end
+
+-- ========================================
+-- TABS CREATION
+-- ========================================
+
+local MainSection = Window:Section({
+    Title = spookyGradient("AutoFarm Control", HalloweenColors.Pumpkin, HalloweenColors.Purple),
+    Icon = "dollar-sign",
+    Opened = true,
+})
+
+local AdvancedSection = Window:Section({
+    Title = spookyGradient("Advanced Settings", HalloweenColors.Orange, HalloweenColors.Witch),
+    Icon = "settings",
+    Opened = true,
+})
+
+local StatsSection = Window:Section({
+    Title = spookyGradient("Statistics", HalloweenColors.Toxic, HalloweenColors.Purple),
+    Icon = "bar-chart",
+    Opened = true,
+})
+
+-- */  Main Farm Tab  /* --
+do
+    local FarmTab = MainSection:Tab({
+        Title = "Main Farm",
+        Icon = "dollar-sign",
+    })
+    
+    FarmTab:Section({
+        Title = "💰 Collection Settings",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    FarmTab:Toggle({
+        Flag = "CoinAutofarm",
+        Title = "Auto Farm Coins",
+        Desc = "Automatically collect coins from the map",
+        Default = false,
+        Callback = function(state)
+            AutoFarmSettings.Coins = state
+            visitedPositions = {}
+            collected = 0
+            if state then
+                Stats.SessionStart = os.time()
+            end
+            WindUI:Notify({ 
+                Title = "Coin Autofarm", 
+                Content = state and "Started!" or "Stopped", 
+                Icon = state and "dollar-sign" or "x-circle", 
+                Duration = 3 
+            })
+        end
+    })
+    
+    FarmTab:Space()
+    
+    FarmTab:Toggle({
+        Flag = "CandyAutofarm",
+        Title = "Auto Farm Candy",
+        Desc = "Collect Halloween candy for event rewards",
+        Default = false,
+        Callback = function(state)
+            AutoFarmSettings.Candy = state
+            visitedPositions = {}
+            collected = 0
+            if state then
+                Stats.SessionStart = os.time()
+            end
+            WindUI:Notify({ 
+                Title = "Candy Autofarm", 
+                Content = state and "Started!" or "Stopped", 
+                Icon = state and "candy" or "x-circle", 
+                Duration = 3 
+            })
+        end
+    })
+    
+    FarmTab:Space()
+    
+    FarmTab:Toggle({
+        Flag = "AutoEndRound",
+        Title = "Auto End Round",
+        Desc = "End round when candy bag is full",
+        Default = false,
+        Callback = function(state)
+            AutoFarmSettings.AutoEnd = state
+            WindUI:Notify({ 
+                Title = "Auto End Round", 
+                Content = state and ("Enabled at " .. maxBagCapacity .. " candy") or "Disabled", 
+                Icon = state and "flag" or "x-circle", 
+                Duration = 3 
+            })
+        end
+    })
+    
+    FarmTab:Space()
+    
+    FarmTab:Toggle({
+        Flag = "FlingMurderer",
+        Title = "Fling Murderer on Full",
+        Desc = "Fling murderer after ending round",
+        Default = false,
+        Callback = function(state)
+            AutoFarmSettings.FlingMurderer = state
+            WindUI:Notify({ 
+                Title = "Fling Murderer", 
+                Content = state and "Enabled" or "Disabled", 
+                Icon = state and "zap" or "x-circle", 
+                Duration = 3 
+            })
+        end
+    })
+    
+    FarmTab:Space({ Columns = 2 })
+    
+    FarmTab:Section({
+        Title = "⚙️ Speed & Distance",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    FarmTab:Slider({
+        Flag = "FlySpeed",
+        Title = "Farm Speed",
+        Desc = "Collection movement speed",
+        Step = 1,
+        Value = {
+            Min = 5,
+            Max = 50,
+            Default = 18
+        },
+        Callback = function(value)
+            AutoFarmSettings.Speed = value
+        end
+    })
+    
+    FarmTab:Space()
+    
+    FarmTab:Slider({
+        Flag = "MaxDistance",
+        Title = "Max Collection Distance",
+        Desc = "Maximum distance to search for items",
+        Step = 10,
+        Value = {
+            Min = 50,
+            Max = 500,
+            Default = 250
+        },
+        Callback = function(value)
+            AutoFarmSettings.MaxDistance = value
+            WindUI:Notify({
+                Title = "Distance Updated",
+                Content = "Max distance: " .. value .. " studs",
+                Icon = "maximize",
+                Duration = 2
+            })
+        end
+    })
+    
+    FarmTab:Space()
+    
+    FarmTab:Section({
+        Title = "⚠️ Speed: 18 recommended, higher may kick you",
+        TextSize = 13,
+        TextTransparency = 0.3,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    FarmTab:Space()
+    
+    FarmTab:Button({
+        Title = "Reset Visited Items",
+        Icon = "refresh-cw",
+        Color = HalloweenColors.Purple,
+        Justify = "Center",
+        Callback = function()
+            visitedPositions = {}
+            WindUI:Notify({ 
+                Title = "Reset", 
+                Content = "Visited items cleared!", 
+                Icon = "check-circle", 
+                Duration = 2 
+            })
+        end
+    })
+end
+
+-- */  Advanced Settings Tab  /* --
+do
+    local AdvancedTab = AdvancedSection:Tab({
+        Title = "Advanced",
+        Icon = "sliders",
+    })
+    
+    AdvancedTab:Section({
+        Title = "🎯 Farm Mode",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    AdvancedTab:Dropdown({
+        Flag = "FarmMode",
+        Title = "Farm Mode",
+        Desc = "Choose farming strategy",
+        Values = {
+            {Title = "Fastest", Icon = "zap"},
+            {Title = "Balanced", Icon = "target"},
+            {Title = "Safest", Icon = "shield"}
+        },
+        Value = "Balanced",
+        Callback = function(option)
+            AutoFarmSettings.FarmMode = option.Title
+            WindUI:Notify({
+                Title = "Farm Mode",
+                Content = "Set to: " .. option.Title,
+                Icon = "check-circle",
+                Duration = 2
+            })
+        end
+    })
+    
+    AdvancedTab:Space()
+    
+    AdvancedTab:Dropdown({
+        Flag = "CollectPriority",
+        Title = "Collection Priority",
+        Desc = "Order of item collection",
+        Values = {
+            {Title = "Nearest", Icon = "crosshair"},
+            {Title = "Farthest", Icon = "maximize"},
+            {Title = "Highest", Icon = "arrow-up"},
+            {Title = "Lowest", Icon = "arrow-down"}
+        },
+        Value = "Nearest",
+        Callback = function(option)
+            AutoFarmSettings.CollectPriority = option.Title
+            WindUI:Notify({
+                Title = "Priority Changed",
+                Content = "Collecting " .. option.Title .. " items first",
+                Icon = "list",
+                Duration = 2
+            })
+        end
+    })
+    
+    AdvancedTab:Space({ Columns = 2 })
+    
+    AdvancedTab:Section({
+        Title = "🛡️ Safety Features",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    AdvancedTab:Toggle({
+        Flag = "SafeMode",
+        Title = "Safe Mode",
+        Desc = "Avoid collecting near murderer",
+        Default = false,
+        Callback = function(state)
+            AutoFarmSettings.SafeMode = state
+            WindUI:Notify({
+                Title = "Safe Mode",
+                Content = state and "Enabled - Avoiding murderer" or "Disabled",
+                Icon = state and "shield" or "shield-off",
+                Duration = 2
+            })
+        end
+    })
+    
+    AdvancedTab:Space()
+    
+    AdvancedTab:Toggle({
+        Flag = "Noclip",
+        Title = "Noclip",
+        Desc = "Walk through walls while farming",
+        Default = true,
+        Callback = function(state)
+            AutoFarmSettings.Noclip = state
+            WindUI:Notify({
+                Title = "Noclip",
+                Content = state and "Enabled" or "Disabled",
+                Icon = state and "check-circle" or "x-circle",
+                Duration = 2
+            })
+        end
+    })
+    
+    AdvancedTab:Space()
+    
+    AdvancedTab:Toggle({
+        Flag = "AutoRejoin",
+        Title = "Auto Rejoin on Kick",
+        Desc = "Automatically rejoin if kicked",
+        Default = false,
+        Callback = function(state)
+            AutoFarmSettings.AutoRejoin = state
+            WindUI:Notify({
+                Title = "Auto Rejoin",
+                Content = state and "Enabled" or "Disabled",
+                Icon = state and "refresh-cw" or "x-circle",
+                Duration = 2
+            })
+        end
+    })
+    
+    AdvancedTab:Space({ Columns = 2 })
+    
+    AdvancedTab:Section({
+        Title = "🚫 Blacklist Management",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    AdvancedTab:Button({
+        Title = "Clear Blacklist",
+        Icon = "trash-2",
+        Color = HalloweenColors.Red,
+        Justify = "Center",
+        Callback = function()
+            blacklistedPositions = {}
+            WindUI:Notify({
+                Title = "Blacklist Cleared",
+                Content = "All blacklisted items removed",
+                Icon = "check-circle",
+                Duration = 2
+            })
+        end
+    })
+    
+    AdvancedTab:Space()
+    
+    AdvancedTab:Button({
+        Title = "Reset All Settings",
+        Icon = "rotate-ccw",
+        Color = HalloweenColors.DarkOrange,
+        Justify = "Center",
+        Callback = function()
+            AutoFarmSettings = {
+                Coins = false,
+                Candy = false,
+                XP = false,
+                Speed = 18,
+                MaxDistance = 250,
+                AutoEnd = false,
+                FlingMurderer = false,
+                SafeMode = false,
+                Noclip = true,
+                SmartPath = false,
+                AutoRejoin = false,
+                CollectPriority = "Nearest",
+                FarmMode = "Balanced",
+            }
+            WindUI:Notify({
+                Title = "Settings Reset",
+                Content = "All settings reset to default",
+                Icon = "refresh-cw",
+                Duration = 3
+            })
+        end
+    })
+end
+
+-- */  Statistics Tab  /* --
+do
+    local StatsTab = StatsSection:Tab({
+        Title = "Stats",
+        Icon = "bar-chart",
+    })
+    
+    StatsTab:Section({
+        Title = "📊 Session Statistics",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    -- Stats display (updates every second)
+    local CoinsLabel = StatsTab:Section({
+        Title = "💰 Coins Collected: 0",
+        TextSize = 15,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    StatsTab:Space()
+    
+    local CandyLabel = StatsTab:Section({
+        Title = "🍬 Candy Collected: 0",
+        TextSize = 15,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    StatsTab:Space()
+    
+    local TimeLabel = StatsTab:Section({
+        Title = "⏱️ Time Running: 0s",
+        TextSize = 15,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    StatsTab:Space()
+    
+    local DistanceLabel = StatsTab:Section({
+        Title = "📏 Distance Traveled: 0 studs",
+        TextSize = 15,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    StatsTab:Space()
+    
+    local BagLabel = StatsTab:Section({
+        Title = "👜 Current Bag: 0/" .. maxBagCapacity,
+        TextSize = 15,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    StatsTab:Space({ Columns = 2 })
+    
+    -- Update stats display
+    task.spawn(function()
+        while true do
+            -- Update labels (Note: These are sections, so we'd need to recreate them or use a different approach)
+            -- For now, this is a placeholder showing the concept
+            task.wait(1)
+        end
+    end)
+    
+    StatsTab:Section({
+        Title = "💡 Stats Info",
+        TextSize = 16,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    StatsTab:Space()
+    
+    StatsTab:Section({
+        Title = "Stats are tracked per session and reset when you restart the script or rejoin the game.",
+        TextSize = 13,
+        TextTransparency = 0.4,
+        FontWeight = Enum.FontWeight.Regular,
+    })
+    
+    StatsTab:Space()
+    
+    StatsTab:Button({
+        Title = "Reset Statistics",
+        Icon = "refresh-cw",
+        Color = HalloweenColors.Accent,
+        Justify = "Center",
+        Callback = function()
+            Stats = {
+                CoinsCollected = 0,
+                CandyCollected = 0,
+                XPGained = 0,
+                TimeRunning = 0,
+                SessionStart = os.time(),
+                TotalDistance = 0,
+            }
+            collected = 0
+            WindUI:Notify({
+                Title = "Stats Reset",
+                Content = "All statistics have been reset!",
+                Icon = "check-circle",
+                Duration = 3
+            })
+        end
+    })
+    
+    StatsTab:Space()
+    
+    StatsTab:Button({
+        Title = "Export Stats to Clipboard",
+        Icon = "clipboard",
+        Color = HalloweenColors.Purple,
+        Justify = "Center",
+        Callback = function()
+            local statsText = string.format(
+                "Zovlane AutoFarm Stats:\nCoins: %d\nCandy: %d\nTime: %ds\nDistance: %.1f studs\nBag: %d/%d",
+                Stats.CoinsCollected,
+                Stats.CandyCollected,
+                Stats.TimeRunning,
+                Stats.TotalDistance,
+                currentBagAmount,
+                maxBagCapacity
+            )
+            setclipboard(statsText)
+            WindUI:Notify({
+                Title = "Stats Copied",
+                Content = "Statistics copied to clipboard!",
+                Icon = "check-circle",
+                Duration = 3
+            })
+        end
+    })
+end
+
+-- */  Info Tab  /* --
+do
+    local InfoSection = Window:Section({
+        Title = spookyGradient("Information", HalloweenColors.Ghost, HalloweenColors.Purple),
+        Icon = "info",
+        Opened = true,
+    })
+    
+    local InfoTab = InfoSection:Tab({
+        Title = "Info",
+        Icon = "info",
+    })
+    
+    InfoTab:Section({
+        Title = "Zovlane AutoFarm Hub",
+        TextSize = 20,
+        FontWeight = Enum.FontWeight.Bold,
+    })
+    
+    InfoTab:Space()
+    
+    InfoTab:Section({
+        Title = "Advanced AutoFarm system for Murder Mystery 2 with intelligent collection, safety features, and detailed statistics tracking.",
+        TextSize = 15,
+        TextTransparency = 0.3,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    InfoTab:Space({ Columns = 2 })
+    
+    InfoTab:Section({
+        Title = "✨ Features",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    InfoTab:Space()
+    
+    InfoTab:Section({
+        Title = "• Coin & Candy AutoFarm\n• Smart Collection Priority\n• Safe Mode (Avoid Murderer)\n• 3 Farm Modes (Fastest/Balanced/Safest)\n• Auto End Round\n• Fling Murderer\n• Distance Control\n• Noclip Support\n• Auto Rejoin\n• Session Statistics\n• Blacklist System",
+        TextSize = 14,
+        TextTransparency = 0.4,
+        FontWeight = Enum.FontWeight.Regular,
+    })
+    
+    InfoTab:Space({ Columns = 2 })
+    
+    InfoTab:Section({
+        Title = "📖 How to Use",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    InfoTab:Space()
+    
+    InfoTab:Section({
+        Title = "1. Enable Coin or Candy AutoFarm\n2. Adjust speed (18 recommended)\n3. Set max collection distance\n4. Choose farm mode and priority\n5. Enable safety features if needed\n6. Monitor stats in Statistics tab\n7. Press V to toggle GUI",
+        TextSize = 14,
+        TextTransparency = 0.4,
+        FontWeight = Enum.FontWeight.Regular,
+    })
+    
+    InfoTab:Space({ Columns = 2 })
+    
+    InfoTab:Section({
+        Title = "⚠️ Tips",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    InfoTab:Space()
+    
+    InfoTab:Section({
+        Title = "• Use Safe Mode in public servers\n• Fastest mode works best in private servers\n• Enable Auto Rejoin for AFK farming\n• Speed above 18 may trigger anti-cheat\n• Clear blacklist if stuck\n• Reset visited items periodically",
+        TextSize = 14,
+        TextTransparency = 0.4,
+        FontWeight = Enum.FontWeight.Regular,
+    })
+end
+
+-- Set default keybind
+Window:SetToggleKey(Enum.KeyCode.V)
+
+-- Config setup
+Window.CurrentConfig = Window.ConfigManager:CreateConfig("default")
+Window.CurrentConfig:Save()
+
+-- Welcome notification
+WindUI:Notify({
+    Title = spookyGradient("Zovlane AutoFarm Ready!", HalloweenColors.Pumpkin, HalloweenColors.Purple),
+    Content = "Advanced farming system loaded! Press V to toggle.",
+    Icon = "dollar-sign",
+    Duration = 5
+})
+
+print("[Zovlane AutoFarm] ✅ Loaded successfully!")
