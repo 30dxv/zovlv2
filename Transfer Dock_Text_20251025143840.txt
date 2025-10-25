@@ -1,0 +1,1295 @@
+--[[
+    Zovlane AutoFarm Hub - MM2
+    Custom UI with Advanced Features
+]]
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- Halloween Colors
+local Colors = {
+    Background = Color3.fromRGB(20, 20, 20),
+    TopBar = Color3.fromRGB(30, 30, 30),
+    SideBar = Color3.fromRGB(25, 25, 25),
+    Button = Color3.fromRGB(35, 35, 35),
+    ButtonHover = Color3.fromRGB(45, 45, 45),
+    Accent = Color3.fromRGB(255, 107, 26),
+    AccentDark = Color3.fromRGB(255, 69, 0),
+    Purple = Color3.fromRGB(157, 78, 221),
+    Green = Color3.fromRGB(57, 255, 20),
+    Red = Color3.fromRGB(139, 0, 0),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextDark = Color3.fromRGB(180, 180, 180),
+}
+
+-- Variables
+local AutoFarmSettings = {
+    Coins = false,
+    Candy = false,
+    Speed = 18,
+    AutoEnd = false,
+    FlingMurderer = false,
+}
+
+local ESPSettings = {
+    Enabled = true,
+    Tracers = false,
+    Filter = "All",
+}
+
+local CharacterSettings = {
+    WalkSpeed = 16,
+    JumpPower = 50,
+    LockWalkSpeed = false,
+    LockJumpPower = false,
+}
+
+local GunSettings = {
+    AutoGrab = false,
+}
+
+local MurdererSettings = {
+    KillAll = false,
+    AttackDelay = 0.5,
+}
+
+local visitedPositions = {}
+local collected = 0
+local currentBagAmount = 0
+local maxBagCapacity = 40
+local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+local tracers = {}
+local highlights = {}
+
+-- Premium Check
+local GAMEPASS_ID = 429957
+local function checkPremium()
+    local success, hasPass = pcall(function()
+        return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, GAMEPASS_ID)
+    end)
+    if success and hasPass then
+        maxBagCapacity = 50
+    else
+        maxBagCapacity = 40
+    end
+end
+checkPremium()
+
+-- Create UI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ZovlaneHub"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local success = pcall(function()
+    ScreenGui.Parent = CoreGui
+end)
+if not success then
+    ScreenGui.Parent = LocalPlayer.PlayerGui
+end
+
+-- Main Frame
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.Size = UDim2.new(0, 650, 0, 450)
+MainFrame.BackgroundColor3 = Colors.Background
+MainFrame.BorderSizePixel = 0
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+local MainStroke = Instance.new("UIStroke")
+MainStroke.Color = Colors.Accent
+MainStroke.Thickness = 2
+MainStroke.Parent = MainFrame
+
+-- Top Bar
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Parent = MainFrame
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundColor3 = Colors.TopBar
+TopBar.BorderSizePixel = 0
+
+local TopBarCorner = Instance.new("UICorner")
+TopBarCorner.CornerRadius = UDim.new(0, 10)
+TopBarCorner.Parent = TopBar
+
+-- Title
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Parent = TopBar
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.Size = UDim2.new(0, 300, 1, 0)
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.Text = "🎃 ZOVLANE HUB"
+Title.TextColor3 = Colors.Accent
+Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Name = "Subtitle"
+Subtitle.Parent = TopBar
+Subtitle.Position = UDim2.new(0, 165, 0, 0)
+Subtitle.Size = UDim2.new(0, 200, 1, 0)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Font = Enum.Font.Gotham
+Subtitle.Text = "Murder Mystery 2"
+Subtitle.TextColor3 = Colors.TextDark
+Subtitle.TextSize = 12
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+
+-- Close Button
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "CloseButton"
+CloseButton.Parent = TopBar
+CloseButton.AnchorPoint = Vector2.new(1, 0.5)
+CloseButton.Position = UDim2.new(1, -10, 0.5, 0)
+CloseButton.Size = UDim2.new(0, 30, 0, 30)
+CloseButton.BackgroundColor3 = Colors.Red
+CloseButton.BorderSizePixel = 0
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Colors.Text
+CloseButton.TextSize = 14
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseButton
+
+CloseButton.MouseButton1Click:Connect(function()
+    ScreenGui:Destroy()
+end)
+
+-- Minimize Button
+local MinimizeButton = Instance.new("TextButton")
+MinimizeButton.Name = "MinimizeButton"
+MinimizeButton.Parent = TopBar
+MinimizeButton.AnchorPoint = Vector2.new(1, 0.5)
+MinimizeButton.Position = UDim2.new(1, -45, 0.5, 0)
+MinimizeButton.Size = UDim2.new(0, 30, 0, 30)
+MinimizeButton.BackgroundColor3 = Colors.Purple
+MinimizeButton.BorderSizePixel = 0
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.Text = "-"
+MinimizeButton.TextColor3 = Colors.Text
+MinimizeButton.TextSize = 18
+
+local MinCorner = Instance.new("UICorner")
+MinCorner.CornerRadius = UDim.new(0, 6)
+MinCorner.Parent = MinimizeButton
+
+local minimized = false
+MinimizeButton.MouseButton1Click:Connect(function()
+    minimized = not minimized
+    if minimized then
+        MainFrame:TweenSize(UDim2.new(0, 650, 0, 40), "Out", "Quad", 0.3, true)
+        MinimizeButton.Text = "+"
+    else
+        MainFrame:TweenSize(UDim2.new(0, 650, 0, 450), "Out", "Quad", 0.3, true)
+        MinimizeButton.Text = "-"
+    end
+end)
+
+-- Side Bar
+local SideBar = Instance.new("Frame")
+SideBar.Name = "SideBar"
+SideBar.Parent = MainFrame
+SideBar.Position = UDim2.new(0, 0, 0, 40)
+SideBar.Size = UDim2.new(0, 150, 1, -40)
+SideBar.BackgroundColor3 = Colors.SideBar
+SideBar.BorderSizePixel = 0
+
+-- Content Frame
+local ContentFrame = Instance.new("Frame")
+ContentFrame.Name = "ContentFrame"
+ContentFrame.Parent = MainFrame
+ContentFrame.Position = UDim2.new(0, 150, 0, 40)
+ContentFrame.Size = UDim2.new(1, -150, 1, -40)
+ContentFrame.BackgroundTransparency = 1
+ContentFrame.BorderSizePixel = 0
+
+local ContentPadding = Instance.new("UIPadding")
+ContentPadding.PaddingLeft = UDim.new(0, 15)
+ContentPadding.PaddingRight = UDim.new(0, 15)
+ContentPadding.PaddingTop = UDim.new(0, 15)
+ContentPadding.PaddingBottom = UDim.new(0, 15)
+ContentPadding.Parent = ContentFrame
+
+-- Tab System
+local tabs = {}
+local currentTab = nil
+
+local function createTabButton(name, icon, order)
+    local TabButton = Instance.new("TextButton")
+    TabButton.Name = name .. "Button"
+    TabButton.Parent = SideBar
+    TabButton.Position = UDim2.new(0, 10, 0, 10 + (order * 45))
+    TabButton.Size = UDim2.new(1, -20, 0, 35)
+    TabButton.BackgroundColor3 = Colors.Button
+    TabButton.BorderSizePixel = 0
+    TabButton.Font = Enum.Font.GothamBold
+    TabButton.Text = icon .. " " .. name
+    TabButton.TextColor3 = Colors.TextDark
+    TabButton.TextSize = 13
+    TabButton.TextXAlignment = Enum.TextXAlignment.Left
+    TabButton.AutoButtonColor = false
+    
+    local TabPadding = Instance.new("UIPadding")
+    TabPadding.PaddingLeft = UDim.new(0, 12)
+    TabPadding.Parent = TabButton
+    
+    local TabCorner = Instance.new("UICorner")
+    TabCorner.CornerRadius = UDim.new(0, 6)
+    TabCorner.Parent = TabButton
+    
+    local TabContent = Instance.new("ScrollingFrame")
+    TabContent.Name = name .. "Content"
+    TabContent.Parent = ContentFrame
+    TabContent.Size = UDim2.new(1, 0, 1, 0)
+    TabContent.BackgroundTransparency = 1
+    TabContent.BorderSizePixel = 0
+    TabContent.ScrollBarThickness = 4
+    TabContent.ScrollBarImageColor3 = Colors.Accent
+    TabContent.Visible = false
+    TabContent.CanvasSize = UDim2.new(0, 0, 0, 0)
+    TabContent.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    
+    local ContentList = Instance.new("UIListLayout")
+    ContentList.Padding = UDim.new(0, 8)
+    ContentList.SortOrder = Enum.SortOrder.LayoutOrder
+    ContentList.Parent = TabContent
+    
+    tabs[name] = {
+        Button = TabButton,
+        Content = TabContent,
+    }
+    
+    TabButton.MouseEnter:Connect(function()
+        if currentTab ~= name then
+            TabButton.BackgroundColor3 = Colors.ButtonHover
+        end
+    end)
+    
+    TabButton.MouseLeave:Connect(function()
+        if currentTab ~= name then
+            TabButton.BackgroundColor3 = Colors.Button
+        end
+    end)
+    
+    TabButton.MouseButton1Click:Connect(function()
+        for tabName, tabData in pairs(tabs) do
+            tabData.Content.Visible = false
+            tabData.Button.BackgroundColor3 = Colors.Button
+            tabData.Button.TextColor3 = Colors.TextDark
+        end
+        
+        TabContent.Visible = true
+        TabButton.BackgroundColor3 = Colors.Accent
+        TabButton.TextColor3 = Colors.Text
+        currentTab = name
+    end)
+    
+    return TabContent
+end
+
+-- Create Tabs
+local AutoFarmTab = createTabButton("Auto Farm", "💰", 0)
+local ESPTab = createTabButton("ESP", "👁️", 1)
+local CharacterTab = createTabButton("Character", "🏃", 2)
+local SheriffTab = createTabButton("Sheriff", "🔫", 3)
+local MurdererTab = createTabButton("Murderer", "🔪", 4)
+local UtilityTab = createTabButton("Utility", "⚙️", 5)
+
+-- Set default tab
+tabs["Auto Farm"].Button.BackgroundColor3 = Colors.Accent
+tabs["Auto Farm"].Button.TextColor3 = Colors.Text
+tabs["Auto Farm"].Content.Visible = true
+currentTab = "Auto Farm"
+
+-- UI Creation Functions
+local function createSection(parent, title)
+    local Section = Instance.new("Frame")
+    Section.Name = title .. "Section"
+    Section.Parent = parent
+    Section.Size = UDim2.new(1, 0, 0, 30)
+    Section.BackgroundTransparency = 1
+    
+    local SectionLabel = Instance.new("TextLabel")
+    SectionLabel.Parent = Section
+    SectionLabel.Size = UDim2.new(1, 0, 1, 0)
+    SectionLabel.BackgroundTransparency = 1
+    SectionLabel.Font = Enum.Font.GothamBold
+    SectionLabel.Text = title
+    SectionLabel.TextColor3 = Colors.Accent
+    SectionLabel.TextSize = 16
+    SectionLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local Divider = Instance.new("Frame")
+    Divider.Parent = Section
+    Divider.Position = UDim2.new(0, 0, 1, -2)
+    Divider.Size = UDim2.new(1, 0, 0, 1)
+    Divider.BackgroundColor3 = Colors.Accent
+    Divider.BorderSizePixel = 0
+    
+    return Section
+end
+
+local function createToggle(parent, title, desc, default, callback)
+    local Toggle = Instance.new("Frame")
+    Toggle.Name = title .. "Toggle"
+    Toggle.Parent = parent
+    Toggle.Size = UDim2.new(1, 0, 0, 50)
+    Toggle.BackgroundColor3 = Colors.Button
+    Toggle.BorderSizePixel = 0
+    
+    local ToggleCorner = Instance.new("UICorner")
+    ToggleCorner.CornerRadius = UDim.new(0, 8)
+    ToggleCorner.Parent = Toggle
+    
+    local TogglePadding = Instance.new("UIPadding")
+    TogglePadding.PaddingLeft = UDim.new(0, 12)
+    TogglePadding.PaddingRight = UDim.new(0, 12)
+    TogglePadding.PaddingTop = UDim.new(0, 8)
+    TogglePadding.PaddingBottom = UDim.new(0, 8)
+    TogglePadding.Parent = Toggle
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Parent = Toggle
+    TitleLabel.Size = UDim2.new(1, -50, 0, 18)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.Text = title
+    TitleLabel.TextColor3 = Colors.Text
+    TitleLabel.TextSize = 14
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local DescLabel = Instance.new("TextLabel")
+    DescLabel.Parent = Toggle
+    DescLabel.Position = UDim2.new(0, 0, 0, 18)
+    DescLabel.Size = UDim2.new(1, -50, 1, -18)
+    DescLabel.BackgroundTransparency = 1
+    DescLabel.Font = Enum.Font.Gotham
+    DescLabel.Text = desc
+    DescLabel.TextColor3 = Colors.TextDark
+    DescLabel.TextSize = 11
+    DescLabel.TextXAlignment = Enum.TextXAlignment.Left
+    DescLabel.TextYAlignment = Enum.TextYAlignment.Top
+    DescLabel.TextWrapped = true
+    
+    local ToggleButton = Instance.new("TextButton")
+    ToggleButton.Parent = Toggle
+    ToggleButton.AnchorPoint = Vector2.new(1, 0)
+    ToggleButton.Position = UDim2.new(1, 0, 0, 0)
+    ToggleButton.Size = UDim2.new(0, 40, 0, 20)
+    ToggleButton.BackgroundColor3 = default and Colors.Green or Color3.fromRGB(60, 60, 60)
+    ToggleButton.BorderSizePixel = 0
+    ToggleButton.Text = ""
+    
+    local ToggleBtnCorner = Instance.new("UICorner")
+    ToggleBtnCorner.CornerRadius = UDim.new(1, 0)
+    ToggleBtnCorner.Parent = ToggleButton
+    
+    local ToggleCircle = Instance.new("Frame")
+    ToggleCircle.Parent = ToggleButton
+    ToggleCircle.Position = default and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+    ToggleCircle.Size = UDim2.new(0, 16, 0, 16)
+    ToggleCircle.BackgroundColor3 = Colors.Text
+    ToggleCircle.BorderSizePixel = 0
+    
+    local CircleCorner = Instance.new("UICorner")
+    CircleCorner.CornerRadius = UDim.new(1, 0)
+    CircleCorner.Parent = ToggleCircle
+    
+    local toggled = default
+    
+    ToggleButton.MouseButton1Click:Connect(function()
+        toggled = not toggled
+        
+        TweenService:Create(ToggleButton, TweenInfo.new(0.2), {
+            BackgroundColor3 = toggled and Colors.Green or Color3.fromRGB(60, 60, 60)
+        }):Play()
+        
+        TweenService:Create(ToggleCircle, TweenInfo.new(0.2), {
+            Position = toggled and UDim2.new(1, -18, 0.5, -8) or UDim2.new(0, 2, 0.5, -8)
+        }):Play()
+        
+        callback(toggled)
+    end)
+    
+    return Toggle
+end
+
+local function createSlider(parent, title, min, max, default, callback)
+    local Slider = Instance.new("Frame")
+    Slider.Name = title .. "Slider"
+    Slider.Parent = parent
+    Slider.Size = UDim2.new(1, 0, 0, 60)
+    Slider.BackgroundColor3 = Colors.Button
+    Slider.BorderSizePixel = 0
+    
+    local SliderCorner = Instance.new("UICorner")
+    SliderCorner.CornerRadius = UDim.new(0, 8)
+    SliderCorner.Parent = Slider
+    
+    local SliderPadding = Instance.new("UIPadding")
+    SliderPadding.PaddingLeft = UDim.new(0, 12)
+    SliderPadding.PaddingRight = UDim.new(0, 12)
+    SliderPadding.PaddingTop = UDim.new(0, 8)
+    SliderPadding.PaddingBottom = UDim.new(0, 8)
+    SliderPadding.Parent = Slider
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Parent = Slider
+    TitleLabel.Size = UDim2.new(0.7, 0, 0, 18)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Font = Enum.Font.GothamBold
+    TitleLabel.Text = title
+    TitleLabel.TextColor3 = Colors.Text
+    TitleLabel.TextSize = 14
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local ValueLabel = Instance.new("TextLabel")
+    ValueLabel.Parent = Slider
+    ValueLabel.AnchorPoint = Vector2.new(1, 0)
+    ValueLabel.Position = UDim2.new(1, 0, 0, 0)
+    ValueLabel.Size = UDim2.new(0.3, 0, 0, 18)
+    ValueLabel.BackgroundTransparency = 1
+    ValueLabel.Font = Enum.Font.GothamBold
+    ValueLabel.Text = tostring(default)
+    ValueLabel.TextColor3 = Colors.Accent
+    ValueLabel.TextSize = 14
+    ValueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    
+    local SliderBar = Instance.new("Frame")
+    SliderBar.Parent = Slider
+    SliderBar.Position = UDim2.new(0, 0, 0, 28)
+    SliderBar.Size = UDim2.new(1, 0, 0, 6)
+    SliderBar.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    SliderBar.BorderSizePixel = 0
+    
+    local BarCorner = Instance.new("UICorner")
+    BarCorner.CornerRadius = UDim.new(1, 0)
+    BarCorner.Parent = SliderBar
+    
+    local SliderFill = Instance.new("Frame")
+    SliderFill.Parent = SliderBar
+    SliderFill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
+    SliderFill.BackgroundColor3 = Colors.Accent
+    SliderFill.BorderSizePixel = 0
+    
+    local FillCorner = Instance.new("UICorner")
+    FillCorner.CornerRadius = UDim.new(1, 0)
+    FillCorner.Parent = SliderFill
+    
+    local SliderButton = Instance.new("TextButton")
+    SliderButton.Parent = SliderBar
+    SliderButton.Size = UDim2.new(1, 0, 1, 0)
+    SliderButton.BackgroundTransparency = 1
+    SliderButton.Text = ""
+    
+    local dragging = false
+    
+    local function slide(input)
+        local pos = math.clamp((input.Position.X - SliderBar.AbsolutePosition.X) / SliderBar.AbsoluteSize.X, 0, 1)
+        local value = math.floor(min + (max - min) * pos)
+        
+        ValueLabel.Text = tostring(value)
+        SliderFill.Size = UDim2.new(pos, 0, 1, 0)
+        callback(value)
+    end
+    
+    SliderButton.MouseButton1Down:Connect(function()
+        dragging = true
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            slide(input)
+        end
+    end)
+    
+    SliderButton.MouseButton1Click:Connect(function()
+        slide(UserInputService:GetMouseLocation())
+    end)
+    
+    return Slider
+end
+
+local function createButton(parent, title, color, callback)
+    local Button = Instance.new("TextButton")
+    Button.Name = title .. "Button"
+    Button.Parent = parent
+    Button.Size = UDim2.new(1, 0, 0, 40)
+    Button.BackgroundColor3 = color or Colors.Accent
+    Button.BorderSizePixel = 0
+    Button.Font = Enum.Font.GothamBold
+    Button.Text = title
+    Button.TextColor3 = Colors.Text
+    Button.TextSize = 14
+    Button.AutoButtonColor = false
+    
+    local ButtonCorner = Instance.new("UICorner")
+    ButtonCorner.CornerRadius = UDim.new(0, 8)
+    ButtonCorner.Parent = Button
+    
+    Button.MouseEnter:Connect(function()
+        TweenService:Create(Button, TweenInfo.new(0.2), {
+            BackgroundColor3 = Color3.fromRGB(
+                math.min(255, Button.BackgroundColor3.R * 255 + 20),
+                math.min(255, Button.BackgroundColor3.G * 255 + 20),
+                math.min(255, Button.BackgroundColor3.B * 255 + 20)
+            )
+        }):Play()
+    end)
+    
+    Button.MouseLeave:Connect(function()
+        TweenService:Create(Button, TweenInfo.new(0.2), {
+            BackgroundColor3 = color or Colors.Accent
+        }):Play()
+    end)
+    
+    Button.MouseButton1Click:Connect(callback)
+    
+    return Button
+end
+
+local function createDropdown(parent, title, options, default, callback)
+    local Dropdown = Instance.new("Frame")
+    Dropdown.Name = title .. "Dropdown"
+    Dropdown.Parent = parent
+    Dropdown.Size = UDim2.new(1, 0, 0, 40)
+    Dropdown.BackgroundColor3 = Colors.Button
+    Dropdown.BorderSizePixel = 0
+    Dropdown.ClipsDescendants = true
+    
+    local DropdownCorner = Instance.new("UICorner")
+    DropdownCorner.CornerRadius = UDim.new(0, 8)
+    DropdownCorner.Parent = Dropdown
+    
+    local DropdownButton = Instance.new("TextButton")
+    DropdownButton.Parent = Dropdown
+    DropdownButton.Size = UDim2.new(1, 0, 0, 40)
+    DropdownButton.BackgroundTransparency = 1
+    DropdownButton.Font = Enum.Font.GothamBold
+    DropdownButton.Text = title .. ": " .. default
+    DropdownButton.TextColor3 = Colors.Text
+    DropdownButton.TextSize = 14
+    DropdownButton.AutoButtonColor = false
+    
+    local Arrow = Instance.new("TextLabel")
+    Arrow.Parent = DropdownButton
+    Arrow.AnchorPoint = Vector2.new(1, 0.5)
+    Arrow.Position = UDim2.new(1, -10, 0.5, 0)
+    Arrow.Size = UDim2.new(0, 20, 0, 20)
+    Arrow.BackgroundTransparency = 1
+    Arrow.Font = Enum.Font.GothamBold
+    Arrow.Text = "▼"
+    Arrow.TextColor3 = Colors.Accent
+    Arrow.TextSize = 12
+    
+    local OptionsFrame = Instance.new("Frame")
+    OptionsFrame.Parent = Dropdown
+    OptionsFrame.Position = UDim2.new(0, 0, 0, 40)
+    OptionsFrame.Size = UDim2.new(1, 0, 0, #options * 35)
+    OptionsFrame.BackgroundTransparency = 1
+    
+    local OptionsList = Instance.new("UIListLayout")
+    OptionsList.Parent = OptionsFrame
+    OptionsList.SortOrder = Enum.SortOrder.LayoutOrder
+    
+    local opened = false
+    
+    for i, option in ipairs(options) do
+        local OptionButton = Instance.new("TextButton")
+        OptionButton.Parent = OptionsFrame
+        OptionButton.Size = UDim2.new(1, 0, 0, 35)
+        OptionButton.BackgroundColor3 = Colors.ButtonHover
+        OptionButton.BorderSizePixel = 0
+        OptionButton.Font = Enum.Font.Gotham
+        OptionButton.Text = option
+        OptionButton.TextColor3 = Colors.TextDark
+        OptionButton.TextSize = 13
+        OptionButton.AutoButtonColor = false
+        
+        OptionButton.MouseEnter:Connect(function()
+            OptionButton.BackgroundColor3 = Colors.Accent
+            OptionButton.TextColor3 = Colors.Text
+        end)
+        
+        OptionButton.MouseLeave:Connect(function()
+            OptionButton.BackgroundColor3 = Colors.ButtonHover
+            OptionButton.TextColor3 = Colors.TextDark
+        end)
+        
+        OptionButton.MouseButton1Click:Connect(function()
+            DropdownButton.Text = title .. ": " .. option
+            opened = false
+            Dropdown:TweenSize(UDim2.new(1, 0, 0, 40), "Out", "Quad", 0.2, true)
+            Arrow.Text = "▼"
+            callback(option)
+        end)
+    end
+    
+    DropdownButton.MouseButton1Click:Connect(function()
+        opened = not opened
+        if opened then
+            Dropdown:TweenSize(UDim2.new(1, 0, 0, 40 + #options * 35), "Out", "Quad", 0.2, true)
+            Arrow.Text = "▲"
+        else
+            Dropdown:TweenSize(UDim2.new(1, 0, 0, 40), "Out", "Quad", 0.2, true)
+            Arrow.Text = "▼"
+        end
+    end)
+    
+    return Dropdown
+end
+
+-- Notification System
+local function Notify(title, message, duration)
+    local NotifFrame = Instance.new("Frame")
+    NotifFrame.Parent = ScreenGui
+    NotifFrame.AnchorPoint = Vector2.new(1, 0)
+    NotifFrame.Position = UDim2.new(1, -20, 0, 20)
+    NotifFrame.Size = UDim2.new(0, 300, 0, 80)
+    NotifFrame.BackgroundColor3 = Colors.Background
+    NotifFrame.BorderSizePixel = 0
+    
+    local NotifCorner = Instance.new("UICorner")
+    NotifCorner.CornerRadius = UDim.new(0, 8)
+    NotifCorner.Parent = NotifFrame
+    
+    local NotifStroke = Instance.new("UIStroke")
+    NotifStroke.Color = Colors.Accent
+    NotifStroke.Thickness = 2
+    NotifStroke.Parent = NotifFrame
+    
+    local NotifPadding = Instance.new("UIPadding")
+    NotifPadding.PaddingLeft = UDim.new(0, 12)
+    NotifPadding.PaddingRight = UDim.new(0, 12)
+    NotifPadding.PaddingTop = UDim.new(0, 10)
+    NotifPadding.PaddingBottom = UDim.new(0, 10)
+    NotifPadding.Parent = NotifFrame
+    
+    local NotifTitle = Instance.new("TextLabel")
+    NotifTitle.Parent = NotifFrame
+    NotifTitle.Size = UDim2.new(1, 0, 0, 20)
+    NotifTitle.BackgroundTransparency = 1
+    NotifTitle.Font = Enum.Font.GothamBold
+    NotifTitle.Text = title
+    NotifTitle.TextColor3 = Colors.Accent
+    NotifTitle.TextSize = 14
+    NotifTitle.TextXAlignment = Enum.TextXAlignment.Left
+    
+    local NotifMessage = Instance.new("TextLabel")
+    NotifMessage.Parent = NotifFrame
+    NotifMessage.Position = UDim2.new(0, 0, 0, 25)
+    NotifMessage.Size = UDim2.new(1, 0, 1, -25)
+    NotifMessage.BackgroundTransparency = 1
+    NotifMessage.Font = Enum.Font.Gotham
+    NotifMessage.Text = message
+    NotifMessage.TextColor3 = Colors.Text
+    NotifMessage.TextSize = 12
+    NotifMessage.TextXAlignment = Enum.TextXAlignment.Left
+    NotifMessage.TextYAlignment = Enum.TextYAlignment.Top
+    NotifMessage.TextWrapped = true
+    
+    task.delay(duration or 3, function()
+        NotifFrame:TweenPosition(UDim2.new(1, 20, 0, 20), "In", "Quad", 0.3, true, function()
+            NotifFrame:Destroy()
+        end)
+    end)
+end
+
+-- ========================================
+-- AUTO FARM FUNCTIONS
+-- ========================================
+
+local function flyTo(pos, speed)
+    if not rootPart then return end
+    local distance = (pos - rootPart.Position).Magnitude
+    local duration = distance / speed
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local goal = {CFrame = CFrame.new(pos)}
+    local tween = TweenService:Create(rootPart, tweenInfo, goal)
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+local function findCoinContainer()
+    for _, v in Workspace:GetChildren() do
+        if v:FindFirstChild("CoinContainer") and v:IsA("Model") then
+            return v:FindFirstChild("CoinContainer")
+        end
+    end
+    return nil
+end
+
+-- AutoFarm Loop
+task.spawn(function()
+    while true do
+        if AutoFarmSettings.Coins or AutoFarmSettings.Candy then
+            character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            rootPart = character:FindFirstChild("HumanoidRootPart")
+            
+            if rootPart then
+                local closest, shortest = nil, math.huge
+                
+                if AutoFarmSettings.Candy then
+                    local coinContainer = findCoinContainer()
+                    
+                    if coinContainer then
+                        for _, coin in pairs(coinContainer:GetChildren()) do
+                            if coin:GetAttribute("CoinID") == "Candy" and coin:FindFirstChild("TouchInterest") then
+                                local dist = (coin.Position - rootPart.Position).Magnitude
+                                
+                                if dist < shortest and dist < 250 and not visitedPositions[coin] then
+                                    closest = coin
+                                    shortest = dist
+                                end
+                            end
+                        end
+                    else
+                        for _, obj in ipairs(Workspace:GetDescendants()) do
+                            if obj:IsA("BasePart") and obj.Name == "candy" then
+                                local dist = (obj.Position - rootPart.Position).Magnitude
+                                
+                                if dist < shortest and dist < 250 and not visitedPositions[obj] then
+                                    closest = obj
+                                    shortest = dist
+                                end
+                            end
+                        end
+                    end
+                elseif AutoFarmSettings.Coins then
+                    for _, obj in ipairs(Workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") and obj.Name == "Coin_Server" then
+                            local dist = (obj.Position - rootPart.Position).Magnitude
+                            if dist < shortest and dist < 250 and not visitedPositions[obj] then
+                                closest = obj
+                                shortest = dist
+                            end
+                        end
+                    end
+                end
+                
+                if closest and closest.Parent and closest:IsDescendantOf(Workspace) then
+                    flyTo(closest.Position, AutoFarmSettings.Speed)
+                    if closest and closest.Parent and closest:IsDescendantOf(Workspace) then
+                        visitedPositions[closest] = true
+                        collected += 1
+                    end
+                end
+            end
+        end
+        
+        task.wait(0.1)
+    end
+end)
+
+-- Disable collisions
+RunService.Stepped:Connect(function()
+    if AutoFarmSettings.Coins or AutoFarmSettings.Candy then
+        for _, v in ipairs(character:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- Character respawn
+LocalPlayer.CharacterAdded:Connect(function(char)
+    character = char
+    rootPart = char:WaitForChild("HumanoidRootPart")
+    visitedPositions = {}
+    currentBagAmount = 0
+    checkPremium()
+end)
+
+-- Monitor candy
+local CoinCollected = ReplicatedStorage:FindFirstChild("Remotes") and 
+                      ReplicatedStorage.Remotes:FindFirstChild("Gameplay") and 
+                      ReplicatedStorage.Remotes.Gameplay:FindFirstChild("CoinCollected")
+
+if CoinCollected then
+    CoinCollected.OnClientEvent:Connect(function(coinType, newAmount, oldAmount, additionalData)
+        if coinType == "Candy" then
+            currentBagAmount = newAmount
+            
+            if currentBagAmount >= maxBagCapacity then
+                Notify("Bag Full!", "Candy bag is full (" .. currentBagAmount .. "/" .. maxBagCapacity .. ")", 3)
+                
+                if AutoFarmSettings.AutoEnd then
+                    task.wait(0.5)
+                    local success = pcall(function()
+                        ReplicatedStorage.Remotes.Gameplay.EndRound:FireServer()
+                    end)
+                    
+                    if success then
+                        Notify("Round Ended", "Successfully ended the round!", 2)
+                        
+                        if AutoFarmSettings.FlingMurderer then
+                            task.wait(0.5)
+                            -- Fling murderer logic here
+                        end
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ========================================
+-- ESP FUNCTIONS
+-- ========================================
+
+local function getRole(player)
+    local character = player.Character
+    if not character then return nil end
+    local backpack = player:FindFirstChild("Backpack")
+    if character:FindFirstChild("Knife") or (backpack and backpack:FindFirstChild("Knife")) then return "Murderer" end
+    if character:FindFirstChild("Gun") or (backpack and backpack:FindFirstChild("Gun")) then return "Sheriff" end
+    return "Innocent"
+end
+
+local function updateESP()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local role = getRole(player)
+            
+            if ESPSettings.Enabled then
+                local show = false
+                if ESPSettings.Filter == "All" then
+                    show = true
+                elseif ESPSettings.Filter == "Murderer" and role == "Murderer" then
+                    show = true
+                elseif ESPSettings.Filter == "Sheriff" and role == "Sheriff" then
+                    show = true
+                elseif ESPSettings.Filter == "Roles" and (role == "Murderer" or role == "Sheriff") then
+                    show = true
+                end
+                
+                if show then
+                    local color = role == "Murderer" and Colors.Red or 
+                                 role == "Sheriff" and Colors.Green or 
+                                 Colors.Accent
+                    
+                    local highlight = player.Character:FindFirstChild("RoleHighlight")
+                    if not highlight then
+                        highlight = Instance.new("Highlight")
+                        highlight.Name = "RoleHighlight"
+                        highlight.FillTransparency = 0.5
+                        highlight.OutlineTransparency = 1
+                        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                        highlight.Adornee = player.Character
+                        highlight.Parent = player.Character
+                    end
+                    highlight.FillColor = color
+                else
+                    local highlight = player.Character:FindFirstChild("RoleHighlight")
+                    if highlight then highlight:Destroy() end
+                end
+            else
+                local highlight = player.Character:FindFirstChild("RoleHighlight")
+                if highlight then highlight:Destroy() end
+            end
+        end
+    end
+end
+
+RunService.Heartbeat:Connect(function()
+    if ESPSettings.Enabled then
+        updateESP()
+    end
+end)
+
+-- ========================================
+-- CHARACTER FUNCTIONS
+-- ========================================
+
+RunService.Heartbeat:Connect(function()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if not CharacterSettings.LockWalkSpeed then
+                hum.WalkSpeed = CharacterSettings.WalkSpeed
+            end
+            if not CharacterSettings.LockJumpPower then
+                hum.JumpPower = CharacterSettings.JumpPower
+            end
+        end
+    end
+end)
+
+-- ========================================
+-- GUN SYSTEM
+-- ========================================
+
+local mapPaths = {
+    "ResearchFacility", "Hospital3", "MilBase", "House2", "Workplace",
+    "Mansion2", "BioLab", "Hotel", "Factory", "Bank2", "PoliceStation"
+}
+
+local function ScanForGun()
+    local guns = {}
+    for _, mapName in ipairs(mapPaths) do
+        local map = Workspace:FindFirstChild(mapName)
+        if map then
+            local gunDrop = map:FindFirstChild("GunDrop")
+            if gunDrop then
+                table.insert(guns, gunDrop)
+            end
+        end
+    end
+    local rootGunDrop = Workspace:FindFirstChild("GunDrop")
+    if rootGunDrop then
+        table.insert(guns, rootGunDrop)
+    end
+    return guns
+end
+
+local function GrabGun()
+    local guns = ScanForGun()
+    if #guns == 0 then
+        Notify("Gun System", "No guns found on map!", 2)
+        return
+    end
+    
+    local nearestGun = nil
+    local minDistance = math.huge
+    local char = LocalPlayer.Character
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    
+    if hrp then
+        for _, gun in ipairs(guns) do
+            local distance = (hrp.Position - gun.Position).Magnitude
+            if distance < minDistance then
+                nearestGun = gun
+                minDistance = distance
+            end
+        end
+    end
+    
+    if nearestGun and hrp then
+        hrp.CFrame = nearestGun.CFrame
+        task.wait(0.3)
+        local prompt = nearestGun:FindFirstChildOfClass("ProximityPrompt")
+        if prompt then
+            fireproximityprompt(prompt)
+            Notify("Gun Grabbed", "Successfully grabbed the gun!", 2)
+        end
+    end
+end
+
+task.spawn(function()
+    while true do
+        if GunSettings.AutoGrab then
+            GrabGun()
+            task.wait(2)
+        end
+        task.wait(0.5)
+    end
+end)
+
+-- ========================================
+-- MURDERER FUNCTIONS
+-- ========================================
+
+local function getNearestTarget()
+    local targets = {}
+    local success, roles = pcall(function()
+        return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+    end)
+    
+    if not success or not roles then return nil end
+    
+    local localRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not localRoot then return nil end
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local humanoid = player.Character:FindFirstChild("Humanoid")
+            local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+            if humanoid and humanoid.Health > 0 and targetRoot then
+                local playerRole = roles[player.Name]
+                if playerRole and (playerRole.Role == "Sheriff" or playerRole.Role == "Innocent" or playerRole.Role == "Hero") then
+                    table.insert(targets, {
+                        Player = player,
+                        Distance = (localRoot.Position - targetRoot.Position).Magnitude
+                    })
+                end
+            end
+        end
+    end
+    
+    table.sort(targets, function(a, b)
+        return a.Distance < b.Distance
+    end)
+    
+    return (targets[1] and targets[1].Player) or nil
+end
+
+local function attackTarget(target)
+    if not target or not target.Character then return false end
+    
+    local humanoid = target.Character:FindFirstChild("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return false end
+    
+    local character = LocalPlayer.Character
+    if not character then return false end
+    
+    local knife = character:FindFirstChild("Knife") or LocalPlayer.Backpack:FindFirstChild("Knife")
+    if knife and knife.Parent == LocalPlayer.Backpack then
+        knife.Parent = character
+    end
+    
+    if not character:FindFirstChild("Knife") then return false end
+    
+    local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+    local localRoot = character:FindFirstChild("HumanoidRootPart")
+    if targetRoot and localRoot then
+        localRoot.CFrame = CFrame.new(targetRoot.Position + ((localRoot.Position - targetRoot.Position).Unit * 2), targetRoot.Position)
+    end
+    
+    local knifeObj = character:FindFirstChild("Knife")
+    if knifeObj and knifeObj:FindFirstChild("Stab") then
+        for i = 1, 3 do
+            knifeObj.Stab:FireServer("Down")
+        end
+        return true
+    end
+    return false
+end
+
+task.spawn(function()
+    while true do
+        if MurdererSettings.KillAll then
+            local target = getNearestTarget()
+            if target then
+                attackTarget(target)
+                task.wait(MurdererSettings.AttackDelay)
+            end
+        end
+        task.wait(0.1)
+    end
+end)
+
+-- ========================================
+-- SHERIFF FUNCTIONS
+-- ========================================
+
+local function ShootMurderer()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then
+        Notify("Error", "You are not alive!", 2)
+        return
+    end
+    
+    local success, roles = pcall(function()
+        return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+    end)
+    
+    if not success or not roles then
+        Notify("Error", "Could not get player roles!", 2)
+        return
+    end
+    
+    local murderer = nil
+    for name, data in pairs(roles) do
+        if data.Role == "Murderer" then
+            murderer = Players:FindFirstChild(name)
+            break
+        end
+    end
+    
+    if not murderer or not murderer.Character or murderer.Character.Humanoid.Health <= 0 then
+        Notify("Error", "No murderer found!", 2)
+        return
+    end
+    
+    local gun = char:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
+    if not gun then
+        Notify("Error", "You don't have a gun!", 2)
+        return
+    end
+    
+    if gun.Parent == LocalPlayer.Backpack then
+        gun.Parent = char
+    end
+    
+    gun = char:FindFirstChild("Gun")
+    if gun and gun:FindFirstChild("KnifeLocal") then
+        local targetPart = murderer.Character:FindFirstChild("HumanoidRootPart")
+        if targetPart then
+            local args = {
+                [1] = 1,
+                [2] = targetPart.Position,
+                [3] = "AH2"
+            }
+            gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(unpack(args))
+            Notify("Shot Fired!", "Shooting " .. murderer.Name .. "!", 2)
+        end
+    end
+end
+
+-- ========================================
+-- BUILD UI CONTENT
+-- ========================================
+
+-- AUTO FARM TAB
+createSection(AutoFarmTab, "💰 Coin & Candy Collection")
+
+createToggle(AutoFarmTab, "Auto Farm Coins", "Automatically collect coins from the map", false, function(v)
+    AutoFarmSettings.Coins = v
+    visitedPositions = {}
+    collected = 0
+    Notify("Coin Farm", v and "Started!" or "Stopped", 2)
+end)
+
+createToggle(AutoFarmTab, "Auto Farm Candy", "Collect Halloween candy for event rewards", false, function(v)
+    AutoFarmSettings.Candy = v
+    visitedPositions = {}
+    collected = 0
+    Notify("Candy Farm", v and "Started!" or "Stopped", 2)
+end)
+
+createToggle(AutoFarmTab, "Auto End Round", "End round when bag is full", false, function(v)
+    AutoFarmSettings.AutoEnd = v
+    Notify("Auto End", v and "Enabled" or "Disabled", 2)
+end)
+
+createToggle(AutoFarmTab, "Fling Murderer", "Fling murderer after ending round", false, function(v)
+    AutoFarmSettings.FlingMurderer = v
+    Notify("Fling Murderer", v and "Enabled" or "Disabled", 2)
+end)
+
+createSlider(AutoFarmTab, "Farm Speed", 5, 50, 18, function(v)
+    AutoFarmSettings.Speed = v
+end)
+
+createButton(AutoFarmTab, "Reset Counter", Colors.Purple, function()
+    collected = 0
+    visitedPositions = {}
+    currentBagAmount = 0
+    Notify("Counter Reset", "Collection counter reset!", 2)
+end)
+
+-- ESP TAB
+createSection(ESPTab, "👁️ Player ESP")
+
+createToggle(ESPTab, "Enable ESP", "Highlight players through walls", true, function(v)
+    ESPSettings.Enabled = v
+    if not v then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Character then
+                local highlight = player.Character:FindFirstChild("RoleHighlight")
+                if highlight then highlight:Destroy() end
+            end
+        end
+    end
+    Notify("ESP", v and "Enabled" or "Disabled", 2)
+end)
+
+createDropdown(ESPTab, "ESP Filter", {"All", "Murderer", "Sheriff", "Roles"}, "All", function(v)
+    ESPSettings.Filter = v
+    Notify("ESP Filter", "Set to: " .. v, 2)
+end)
+
+-- CHARACTER TAB
+createSection(CharacterTab, "🏃 Movement Settings")
+
+createSlider(CharacterTab, "Walk Speed", 0, 200, 16, function(v)
+    CharacterSettings.WalkSpeed = v
+end)
+
+createToggle(CharacterTab, "Lock Walk Speed", "Prevent walkspeed changes", false, function(v)
+    CharacterSettings.LockWalkSpeed = v
+end)
+
+createSlider(CharacterTab, "Jump Power", 0, 200, 50, function(v)
+    CharacterSettings.JumpPower = v
+end)
+
+createToggle(CharacterTab, "Lock Jump Power", "Prevent jump power changes", false, function(v)
+    CharacterSettings.LockJumpPower = v
+end)
+
+createButton(CharacterTab, "Reset to Default", Colors.Accent, function()
+    CharacterSettings.WalkSpeed = 16
+    CharacterSettings.JumpPower = 50
+    Notify("Character", "Reset to default!", 2)
+end)
+
+-- SHERIFF TAB
+createSection(SheriffTab, "🔫 Sheriff Tools")
+
+createButton(SheriffTab, "Shoot Murderer", Colors.Green, function()
+    ShootMurderer()
+end)
+
+createToggle(SheriffTab, "Auto TP to Gun", "Automatically teleport to dropped gun", false, function(v)
+    GunSettings.AutoGrab = v
+    Notify("Auto Gun", v and "Enabled" or "Disabled", 2)
+end)
+
+createButton(SheriffTab, "TP to Gun Manually", Colors.Purple, function()
+    GrabGun()
+end)
+
+-- MURDERER TAB
+createSection(MurdererTab, "🔪 Murderer Tools")
+
+createToggle(MurdererTab, "Kill All Players", "Automatically attack nearby targets", false, function(v)
+    MurdererSettings.KillAll = v
+    Notify("Kill All", v and "Started!" or "Stopped", 2)
+end)
+
+createSlider(MurdererTab, "Attack Delay", 0.1, 2, 0.5, function(v)
+    MurdererSettings.AttackDelay = v
+end)
+
+-- UTILITY TAB
+createSection(UtilityTab, "⚙️ Utilities")
+
+createButton(UtilityTab, "Teleport to Players", Colors.Accent, function()
+    Notify("Coming Soon", "Player teleport feature coming soon!", 2)
+end)
+
+createButton(UtilityTab, "Anti-AFK", Colors.Green, function()
+    local success = pcall(function()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/hassanxzayn-lua/Anti-afk/main/antiafkbyhassanxzyn"))()
+    end)
+    Notify("Anti-AFK", success and "Loaded!" or "Failed to load", 2)
+end)
+
+-- Welcome message
+Notify("Zovlane Hub", "Loaded successfully! Press X to close.", 4)
+
+print("[Zovlane Hub] Loaded successfully!")
