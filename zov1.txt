@@ -1044,8 +1044,8 @@ Corner.Parent = ShootButton
 
 -- Add stroke
 local Stroke = Instance.new("UIStroke")
-Stroke.Color = HalloweenColors.Toxic
-Stroke.Thickness = 3
+Stroke.Color = Color3.fromRGB(255, 255, 255)
+Stroke.Thickness = 1
 Stroke.Transparency = 0
 Stroke.Parent = ShootButton
 
@@ -1882,4 +1882,5 @@ WindUI:Notify({
     Content = "All features ready! Press V to toggle GUI.",
     Icon = "package",
     Duration = 5
+
 })
