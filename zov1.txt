@@ -1,0 +1,1885 @@
+--[[
+    Zovlane Hub - Weapon Tools Edition
+    Weapon Duplication & Spawner for MM2
+]]
+
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+
+-- Services
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
+
+-- Halloween Color Theme
+local HalloweenColors = {
+    Orange = Color3.fromHex("#FF6B1A"),
+    DarkOrange = Color3.fromHex("#FF4500"),
+    Purple = Color3.fromHex("#9D4EDD"),
+    DarkPurple = Color3.fromHex("#5A189A"),
+    Blood = Color3.fromHex("#8B0000"),
+    Ghost = Color3.fromHex("#E0E0E0"),
+    Pumpkin = Color3.fromHex("#FF7518"),
+    Witch = Color3.fromHex("#6B2E8A"),
+    Midnight = Color3.fromHex("#0D0221"),
+    Toxic = Color3.fromHex("#39FF14"),
+}
+
+-- Spooky Gradient Function
+local function spookyGradient(text, color1, color2)
+    local result = ""
+    local length = #text
+    for i = 1, length do
+        local t = (i - 1) / math.max(length - 1, 1)
+        local r = math.floor((color1.R + ((color2.R - color1.R) * t)) * 255)
+        local g = math.floor((color1.G + ((color2.G - color1.G) * t)) * 255)
+        local b = math.floor((color1.B + ((color2.B - color1.B) * t)) * 255)
+        local char = text:sub(i, i)
+        result = result .. '<font color="rgb(' .. r .. ", " .. g .. ", " .. b .. ')">' .. char .. "</font>"
+    end
+    return result
+end
+
+-- Welcome Popup
+local Confirmed = false
+WindUI:Popup({
+    Title = spookyGradient("Zovlane Hub", HalloweenColors.Pumpkin, HalloweenColors.Purple),
+    Icon = "package",
+    Content = (spookyGradient("Weapon Tools & Auto Farm", HalloweenColors.Orange, HalloweenColors.DarkPurple) .. "<br/>" .. spookyGradient("Enhanced MM2 Tools", HalloweenColors.Toxic, HalloweenColors.Purple)),
+    Buttons = {
+        {
+            Title = "Exit",
+            Callback = function() end,
+            Variant = "Tertiary"
+        },
+        {
+            Title = spookyGradient("Continue", HalloweenColors.Toxic, HalloweenColors.Orange),
+            Callback = function()
+                Confirmed = true
+            end,
+            Variant = "Primary"
+        }
+    }
+})
+
+repeat task.wait() until Confirmed
+
+-- */  Window  /* --
+local Window = WindUI:CreateWindow({
+    Title = spookyGradient("Zovlane Hub", HalloweenColors.Pumpkin, HalloweenColors.Purple),
+    Author = "by Zovlane Scripts • Weapon Tools",
+    Folder = "zovlanehub_weapons",
+    Icon = "package",
+    NewElements = true,
+    
+    Size = UDim2.new(0, 500, 0, 420),
+    
+    Transparent = true,
+    BackgroundTransparency = 0.5,
+    
+    Theme = "Dark",
+    SideBarWidth = 200,
+    
+    HideSearchBar = false,
+    ScrollBarEnabled = true,
+    
+    OpenButton = {
+        Title = "Open Zovlane Hub",
+        CornerRadius = UDim.new(0.5, 0),
+        StrokeThickness = 2,
+        Enabled = true,
+        Draggable = true,
+        OnlyMobile = false,
+        
+        Color = ColorSequence.new(
+            HalloweenColors.Pumpkin, 
+            HalloweenColors.Purple
+        )
+    },
+    
+    User = {
+        Enabled = true,
+        Anonymous = false,
+        Callback = function() end,
+    },
+})
+
+-- Auto Farm Variables
+local autoFarmCoins = false
+local autoFarmCandy = false
+local autoEndRound = false
+local flingMurdererOnFull = false
+local visitedPositions = {}
+local flySpeed = 15
+local collected = 0
+local currentBagAmount = 0
+local maxBagCapacity = 40
+local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local rootPart = character:WaitForChild("HumanoidRootPart")
+
+-- Check for premium gamepass
+local GAMEPASS_ID = 429957 -- Premium gamepass ID
+
+local function checkPremiumStatus()
+    local success, hasGamepass = pcall(function()
+        return MarketplaceService:UserOwnsGamePassAsync(LocalPlayer.UserId, GAMEPASS_ID)
+    end)
+
+    if success then
+        if hasGamepass then
+            maxBagCapacity = 50
+            print("[Gamepass Check] ✅ You own the premium gamepass!")
+        else
+            maxBagCapacity = 40
+            print("[Gamepass Check] ❌ You do NOT own the premium gamepass.")
+        end
+    else
+        maxBagCapacity = 40
+        print("[Gamepass Check] ⚠️ Failed to check ownership.")
+    end
+end
+
+-- Initialize premium check
+checkPremiumStatus()
+
+-- ESP System Variables
+local murderHasKnife = false
+local sheriffHasGun = false
+local currentESPOptions = { "Esp All" }
+local highlightEnabled = true
+local lineESPEnabled = false
+local tracers = {}
+
+-- Weapon Dupe Variables
+local WeaponName = ""
+local FunctionCall = 1
+
+-- Gun System Variables
+local GunSystem = {
+    AutoGrabEnabled = false,
+    NotifyGunDrop = true,
+    GunDropCheckInterval = 1,
+    ActiveGunDrops = {},
+}
+
+local mapPaths = {
+    "ResearchFacility", "Hospital3", "MilBase", "House2", "Workplace",
+    "Mansion2", "BioLab", "Hotel", "Factory", "Bank2", "PoliceStation"
+}
+
+-- UI Path for dupe functions
+local UIPath
+if LocalPlayer.PlayerGui.MainGUI.Game:FindFirstChild("Inventory") ~= nil then
+    UIPath = LocalPlayer.PlayerGui.MainGUI.Game.Inventory.Main
+else
+    UIPath = LocalPlayer.PlayerGui.MainGUI.Lobby.Screens.Inventory.Main
+end
+
+-- ESP Functions
+local function getRole(player)
+    local character = player.Character
+    if not character then return nil end
+    local backpack = player:FindFirstChild("Backpack")
+    if character:FindFirstChild("Knife") or (backpack and backpack:FindFirstChild("Knife")) then return "Murderer" end
+    if character:FindFirstChild("Gun") or (backpack and backpack:FindFirstChild("Gun")) then return "Sheriff" end
+    return "Innocent"
+end
+
+local function isPlayerTargeted(player, selectedOptions)
+    local role = getRole(player)
+    if not role then return false end
+    if table.find(selectedOptions, "Esp All") then return true end
+    if table.find(selectedOptions, "Esp Murder") and role == "Murderer" then return true end
+    if table.find(selectedOptions, "Esp Sheriff") and role == "Sheriff" then return true end
+    if table.find(selectedOptions, "Esp Sheriff / Murder") and (role == "Sheriff" or role == "Murderer") then return true end
+    return false
+end
+
+local function createHighlight(character, color)
+    local highlight = character:FindFirstChild("RoleHighlight")
+    if not highlight then
+        highlight = Instance.new("Highlight")
+        highlight.Name = "RoleHighlight"
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 1
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Adornee = character
+        highlight.Parent = character
+    end
+    highlight.FillColor = color
+end
+
+local function removeHighlight(character)
+    local highlight = character:FindFirstChild("RoleHighlight")
+    if highlight then highlight:Destroy() end
+end
+
+local function createTracer(player, color)
+    local line = Drawing.new("Line")
+    line.Thickness = 2
+    line.Color = color or Color3.new(1, 1, 1)
+    line.Transparency = 1
+    tracers[player] = line
+end
+
+local function removeTracer(player)
+    if tracers[player] then
+        tracers[player]:Remove()
+        tracers[player] = nil
+    end
+end
+
+local function updateESP()
+    murderHasKnife = false
+    sheriffHasGun = false
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local role = getRole(player)
+            if role == "Murderer" then murderHasKnife = true end
+            if role == "Sheriff" then sheriffHasGun = true end
+        end
+    end
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local role = getRole(player)
+            local target = isPlayerTargeted(player, currentESPOptions)
+
+            if highlightEnabled then
+                if target then
+                    local color = role == "Murderer" and HalloweenColors.Blood or 
+                                 role == "Sheriff" and HalloweenColors.Toxic or 
+                                 HalloweenColors.Orange
+                    createHighlight(player.Character, color)
+                else
+                    removeHighlight(player.Character)
+                end
+            else
+                removeHighlight(player.Character)
+            end
+
+            if lineESPEnabled and target then
+                local color = role == "Murderer" and HalloweenColors.Blood or 
+                             role == "Sheriff" and HalloweenColors.Toxic or 
+                             HalloweenColors.Orange
+                if not tracers[player] then 
+                    createTracer(player, color) 
+                else
+                    tracers[player].Color = color
+                end
+            else
+                removeTracer(player)
+            end
+        end
+    end
+end
+
+-- Auto Farm Functions
+local function flyTo(pos, speed)
+    if not rootPart then return end
+    local distance = (pos - rootPart.Position).Magnitude
+    local duration = distance / speed
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+    local goal = {CFrame = CFrame.new(pos)}
+    local tween = TweenService:Create(rootPart, tweenInfo, goal)
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+local function findCoinContainer()
+    for _, v in Workspace:GetChildren() do
+        if v:FindFirstChild("CoinContainer") and v:IsA("Model") then
+            return v:FindFirstChild("CoinContainer")
+        end
+    end
+    return nil
+end
+
+-- MiniFling function
+local function miniFling(Targets)
+    local Players = game:GetService("Players")
+    local AllBool = false
+
+    local GetPlayer = function(Name)
+        Name = Name:lower()
+        if Name == "all" or Name == "others" then
+            AllBool = true
+            return
+        elseif Name == "random" then
+            local GetPlayers = Players:GetPlayers()
+            if table.find(GetPlayers,Players.LocalPlayer) then table.remove(GetPlayers,table.find(GetPlayers,Players.LocalPlayer)) end
+            return GetPlayers[math.random(#GetPlayers)]
+        elseif Name ~= "random" and Name ~= "all" and Name ~= "others" then
+            for _,x in next, Players:GetPlayers() do
+                if x ~= Players.LocalPlayer then
+                    if x.Name:lower():match("^"..Name) then
+                        return x;
+                    elseif x.DisplayName:lower():match("^"..Name) then
+                        return x;
+                    end
+                end
+            end
+        else
+            return
+        end
+    end
+
+    local SkidFling = function(TargetPlayer)
+        local Character = Players.LocalPlayer.Character
+        local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+        local RootPart = Humanoid and Humanoid.RootPart
+
+        local TCharacter = TargetPlayer.Character
+        local THumanoid
+        local TRootPart
+        local THead
+        local Accessory
+        local Handle
+
+        if TCharacter:FindFirstChildOfClass("Humanoid") then
+            THumanoid = TCharacter:FindFirstChildOfClass("Humanoid")
+        end
+        if THumanoid and THumanoid.RootPart then
+            TRootPart = THumanoid.RootPart
+        end
+        if TCharacter:FindFirstChild("Head") then
+            THead = TCharacter.Head
+        end
+        if TCharacter:FindFirstChildOfClass("Accessory") then
+            Accessory = TCharacter:FindFirstChildOfClass("Accessory")
+        end
+        if Accessory and Accessory:FindFirstChild("Handle") then
+            Handle = Accessory.Handle
+        end
+
+        if Character and Humanoid and RootPart then
+            if RootPart.Velocity.Magnitude < 50 then
+                getgenv().OldPos = RootPart.CFrame
+            end
+            if THumanoid and THumanoid.Sit and not AllBool then
+                return 
+            end
+            if THead then
+                Workspace.CurrentCamera.CameraSubject = THead
+            elseif not THead and Handle then
+                Workspace.CurrentCamera.CameraSubject = Handle
+            elseif THumanoid and TRootPart then
+                Workspace.CurrentCamera.CameraSubject = THumanoid
+            end
+            if not TCharacter:FindFirstChildWhichIsA("BasePart") then
+                return
+            end
+
+            local FPos = function(BasePart, Pos, Ang)
+                RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+                Character:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
+                RootPart.Velocity = Vector3.new(9e7, 9e7 * 10, 9e7)
+                RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+            end
+
+            local SFBasePart = function(BasePart)
+                local TimeToWait = 2
+                local Time = tick()
+                local Angle = 0
+
+                repeat
+                    if RootPart and THumanoid then
+                        if BasePart.Velocity.Magnitude < 50 then
+                            Angle = Angle + 100
+
+                            FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle),0 ,0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection,CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection,CFrame.Angles(math.rad(Angle), 0, 0))
+                            task.wait()
+                        else
+                            FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5 ,0), CFrame.Angles(math.rad(-90), 0, 0))
+                            task.wait()
+
+                            FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                            task.wait()
+                        end
+                    else
+                        break
+                    end
+                until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= TargetPlayer.Character or TargetPlayer.Parent ~= Players or not TargetPlayer.Character == TCharacter or THumanoid.Sit or Humanoid.Health <= 0 or tick() > Time + TimeToWait
+            end
+
+            Workspace.FallenPartsDestroyHeight = 0/0
+
+            local BV = Instance.new("BodyVelocity")
+            BV.Name = "EpixVel"
+            BV.Parent = RootPart
+            BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+            BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
+
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+
+            if TRootPart and THead then
+                if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then
+                    SFBasePart(THead)
+                else
+                    SFBasePart(TRootPart)
+                end
+            elseif TRootPart and not THead then
+                SFBasePart(TRootPart)
+            elseif not TRootPart and THead then
+                SFBasePart(THead)
+            elseif not TRootPart and not THead and Accessory and Handle then
+                SFBasePart(Handle)
+            else
+                return 
+            end
+
+            BV:Destroy()
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            Workspace.CurrentCamera.CameraSubject = Humanoid
+
+            repeat
+                RootPart.CFrame = getgenv().OldPos * CFrame.new(0, .5, 0)
+                Character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, .5, 0))
+                Humanoid:ChangeState("GettingUp")
+                table.foreach(Character:GetChildren(), function(_, x)
+                    if x:IsA("BasePart") then
+                        x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+                    end
+                end)
+                task.wait()
+            until (RootPart.Position - getgenv().OldPos.p).Magnitude < 25
+            Workspace.FallenPartsDestroyHeight = -500
+        else
+            return 
+        end
+        Workspace.FallenPartsDestroyHeight = -500
+    end
+
+    if Targets[1] then for _,x in next, Targets do GetPlayer(x) end else return end
+
+    if AllBool then
+        for _,x in next, Players:GetPlayers() do
+            SkidFling(x)
+        end
+    end
+
+    for _,x in next, Targets do
+        if GetPlayer(x) and GetPlayer(x) ~= Players.LocalPlayer then
+            local TPlayer = GetPlayer(x)
+            if TPlayer then
+                SkidFling(TPlayer)
+            end
+        elseif not GetPlayer(x) and not AllBool then
+            
+        end
+    end
+end
+
+-- Function to find and fling murderer
+local function flingMurderer()
+    local success, roles = pcall(function()
+        return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+    end)
+    
+    if not success or not roles then 
+        WindUI:Notify({
+            Title = "Fling Murderer",
+            Content = "Could not get player roles!",
+            Icon = "x-circle",
+            Duration = 3
+        })
+        return 
+    end
+    
+    local murderer = nil
+    for name, data in pairs(roles) do
+        if data.Role == "Murderer" then
+            murderer = Players:FindFirstChild(name)
+            break
+        end
+    end
+    
+    if murderer then
+        miniFling({murderer.Name})
+        WindUI:Notify({
+            Title = "Fling Murderer",
+            Content = "Flinging " .. murderer.Name .. "!",
+            Icon = "zap",
+            Duration = 3
+        })
+    else
+        WindUI:Notify({
+            Title = "Fling Murderer",
+            Content = "No murderer found!",
+            Icon = "alert-circle",
+            Duration = 3
+        })
+    end
+end
+
+-- Function to end round
+local function endRound()
+    local success = pcall(function()
+        ReplicatedStorage.Remotes.Gameplay.EndRound:FireServer()
+    end)
+    
+    if success then
+        WindUI:Notify({
+            Title = "Auto End Round",
+            Content = "Round ended!",
+            Icon = "check-circle",
+            Duration = 3
+        })
+        
+        -- Fling murderer after ending round if enabled
+        if flingMurdererOnFull then
+            task.wait(0.5)
+            flingMurderer()
+        end
+    else
+        WindUI:Notify({
+            Title = "Auto End Round",
+            Content = "Failed to end round!",
+            Icon = "x-circle",
+            Duration = 3
+        })
+    end
+end
+
+-- AutoFarm Loop
+task.spawn(function()
+    while true do
+        if autoFarmCoins or autoFarmCandy then
+            character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            rootPart = character:FindFirstChild("HumanoidRootPart")
+            
+            if rootPart then
+                local closest, shortest = nil, math.huge
+                
+                if autoFarmCandy then
+                    local coinContainer = findCoinContainer()
+                    
+                    if coinContainer then
+                        for _, coin in pairs(coinContainer:GetChildren()) do
+                            if coin:GetAttribute("CoinID") == "Candy" and coin:FindFirstChild("TouchInterest") then
+                                local dist = (coin.Position - rootPart.Position).Magnitude
+                                
+                                if dist < shortest and dist < 250 and not visitedPositions[coin] then
+                                    closest = coin
+                                    shortest = dist
+                                end
+                            end
+                        end
+                    else
+                        for _, obj in ipairs(Workspace:GetDescendants()) do
+                            if obj:IsA("BasePart") and obj.Name == "candy" then
+                                local dist = (obj.Position - rootPart.Position).Magnitude
+                                
+                                if dist < shortest and dist < 250 and not visitedPositions[obj] then
+                                    closest = obj
+                                    shortest = dist
+                                end
+                            end
+                        end
+                    end
+                elseif autoFarmCoins then
+                    for _, obj in ipairs(Workspace:GetDescendants()) do
+                        if obj:IsA("BasePart") and obj.Name == "Coin_Server" then
+                            local dist = (obj.Position - rootPart.Position).Magnitude
+                            if dist < shortest and dist < 250 and not visitedPositions[obj] then
+                                closest = obj
+                                shortest = dist
+                            end
+                        end
+                    end
+                end
+                
+                if closest and closest.Parent and closest:IsDescendantOf(Workspace) then
+                    flyTo(closest.Position, flySpeed)
+                    if closest and closest.Parent and closest:IsDescendantOf(Workspace) then
+                        visitedPositions[closest] = true
+                        collected += 1
+                    end
+                end
+            end
+        end
+        
+        task.wait(0.1)
+    end
+end)
+
+-- Disable collisions while flying
+RunService.Stepped:Connect(function()
+    if autoFarmCoins or autoFarmCandy then
+        for _, v in ipairs(character:GetDescendants()) do
+            if v:IsA("BasePart") then
+                v.CanCollide = false
+            end
+        end
+    end
+end)
+
+-- Character respawn handling
+LocalPlayer.CharacterAdded:Connect(function(char)
+    character = char
+    rootPart = char:WaitForChild("HumanoidRootPart")
+    visitedPositions = {}
+    currentBagAmount = 0
+    checkPremiumStatus()
+end)
+
+-- Monitor candy collection
+local CoinCollected = ReplicatedStorage:FindFirstChild("Remotes") and 
+                      ReplicatedStorage.Remotes:FindFirstChild("Gameplay") and 
+                      ReplicatedStorage.Remotes.Gameplay:FindFirstChild("CoinCollected")
+
+if CoinCollected then
+    CoinCollected.OnClientEvent:Connect(function(coinType, newAmount, oldAmount, additionalData)
+        if coinType == "Candy" then
+            currentBagAmount = newAmount
+            
+            -- Check if bag is full
+            if currentBagAmount >= maxBagCapacity then
+                WindUI:Notify({
+                    Title = "Bag Full!",
+                    Content = "Candy bag is full (" .. currentBagAmount .. "/" .. maxBagCapacity .. ")",
+                    Icon = "package",
+                    Duration = 3
+                })
+                
+                -- Auto end round if enabled
+                if autoEndRound then
+                    task.wait(0.5)
+                    endRound()
+                end
+            end
+        end
+    end)
+end
+
+-- Weapon Dupe Functions
+local function DuplicateWeapon()
+    wait(math.random(1, 3))
+    for i,v in pairs(UIPath.Weapons.Items.Container:GetChildren()) do
+        for i,v in pairs(v.Container:GetChildren()) do
+            if v.Name == "Christmas" or v.Name == "Halloween" then
+                for i,v in pairs(v.Container:GetChildren()) do
+                    if v:IsA("Frame") and v.ItemName.Label.Text == WeaponName then
+                        local amount = v.Container.Amount.Text
+                        if amount == "" or amount == "None" then
+                            v.Container.Amount.Text = "x2"
+                        else
+                            local num = tonumber(amount:match("x(%d+)"))
+                            if num then
+                                v.Container.Amount.Text = "x" .. tostring(num + 1)
+                            end
+                        end
+                    end
+                end
+            else
+                if v:IsA("Frame") and v.ItemName.Label.Text == WeaponName then
+                    local amount = v.Container.Amount.Text
+                    if amount == "" or amount == "None" then
+                        v.Container.Amount.Text = "x2"
+                    else
+                        local num = tonumber(amount:match("x(%d+)"))
+                        if num then
+                            v.Container.Amount.Text = "x" .. tostring(num + 1)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function DuplicateInventory()
+    wait(math.random(3, 5))
+    for i,v in pairs(UIPath.Weapons.Items.Container:GetChildren()) do
+        for i,v in pairs(v.Container:GetChildren()) do
+            if v.Name == "Christmas" or v.Name == "Halloween" then
+                for i,v in pairs(v.Container:GetChildren()) do
+                    if v:IsA("Frame") then
+                        if v.ItemName.Label.Text ~= "Default Knife" and v.ItemName.Label.Text ~= "Default Gun" then
+                            local amount = v.Container.Amount.Text
+                            if amount == "" or amount == "None" then
+                                v.Container.Amount.Text = "x2"
+                            else
+                                local num = tonumber(amount:match("x(%d+)"))
+                                if num then
+                                    v.Container.Amount.Text = "x" .. tostring(num * 2)
+                                end
+                            end
+                        end
+                    end
+                end
+            else
+                if v:IsA("Frame") then
+                    if v.ItemName.Label.Text ~= "Default Knife" and v.ItemName.Label.Text ~= "Default Gun" then
+                        local amount = v.Container.Amount.Text
+                        if amount == "" or amount == "None" then
+                            v.Container.Amount.Text = "x2"
+                        else
+                            local num = tonumber(amount:match("x(%d+)"))
+                            if num then
+                                v.Container.Amount.Text = "x" .. tostring(num * 2)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    for i,v in pairs(UIPath.Pets.Items.Container.Current.Container:GetChildren()) do
+        if v:IsA("Frame") then
+            local amount = v.Container.Amount.Text
+            if amount == "" or amount == "None" then
+                v.Container.Amount.Text = "x2"
+            else
+                local num = tonumber(amount:match("x(%d+)"))
+                if num then
+                    v.Container.Amount.Text = "x" .. tostring(num * 2)
+                end
+            end
+        end
+    end
+end
+
+-- Weapon Spawner Functions
+local function getrandombox()
+    local success, boxes = pcall(function()
+        return require(game:GetService("ReplicatedStorage").Database.Sync.MysteryBox)
+    end)
+    
+    if not success or not boxes or next(boxes) == nil then 
+        return "StandardBox"
+    end
+    
+    local keys = {}
+    for k, _ in pairs(boxes) do
+        table.insert(keys, k)
+    end
+    return keys[math.random(1, #keys)]
+end
+
+local function opencrate(ITEM_NAME)
+    local success = pcall(function()
+        local boxmodule = require(game:GetService("ReplicatedStorage").Modules.BoxModule)
+        local itemdatabase = require(game:GetService("ReplicatedStorage").Database.Sync.Item)
+        
+        if ITEM_NAME and itemdatabase[ITEM_NAME] then
+            print("Spawning:", ITEM_NAME)
+            boxmodule.OpenBox(getrandombox(), ITEM_NAME)
+            
+            local success2 = pcall(function()
+                local poop = getsenv(game:GetService("Players").LocalPlayer.PlayerGui.MainGUI.Inventory.NewItem)._G
+                poop.NewItem(ITEM_NAME, nil, nil, "Weapons", 1)
+            end)
+            
+            WindUI:Notify({
+                Title = "Success",
+                Content = "Successfully spawned: " .. ITEM_NAME,
+                Icon = "check-circle",
+                Duration = 3
+            })
+        else
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Invalid item: " .. ITEM_NAME,
+                Icon = "x-circle",
+                Duration = 3
+            })
+        end
+    end)
+    
+    if not success then
+        WindUI:Notify({
+            Title = "Error",
+            Content = "Error opening crate for: " .. ITEM_NAME,
+            Icon = "x-circle",
+            Duration = 3
+        })
+    end
+end
+
+-- Gun System Functions
+local function ScanForGunDrops()
+    GunSystem.ActiveGunDrops = {}
+    for _, mapName in ipairs(mapPaths) do
+        local map = Workspace:FindFirstChild(mapName)
+        if map then
+            local gunDrop = map:FindFirstChild("GunDrop")
+            if gunDrop then
+                table.insert(GunSystem.ActiveGunDrops, gunDrop)
+            end
+        end
+    end
+    local rootGunDrop = Workspace:FindFirstChild("GunDrop")
+    if rootGunDrop then
+        table.insert(GunSystem.ActiveGunDrops, rootGunDrop)
+    end
+end
+
+local function GrabGun(gunDrop)
+    if not gunDrop then
+        ScanForGunDrops()
+        if #GunSystem.ActiveGunDrops == 0 then
+            WindUI:Notify({
+                Title = "Gun System",
+                Content = "No guns available on the map",
+                Icon = "x-circle",
+                Duration = 3
+            })
+            return false
+        end
+        local nearestGun = nil
+        local minDistance = math.huge
+        local character = LocalPlayer.Character
+        local humanoidRootPart = character and character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            for _, drop in ipairs(GunSystem.ActiveGunDrops) do
+                local distance = (humanoidRootPart.Position - drop.Position).Magnitude
+                if distance < minDistance then
+                    nearestGun = drop
+                    minDistance = distance
+                end
+            end
+        end
+        gunDrop = nearestGun
+    end
+    if (gunDrop and LocalPlayer.Character) then
+        local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            humanoidRootPart.CFrame = gunDrop.CFrame
+            task.wait(0.3)
+            local prompt = gunDrop:FindFirstChildOfClass("ProximityPrompt")
+            if prompt then
+                fireproximityprompt(prompt)
+                WindUI:Notify({
+                    Title = "Gun System",
+                    Content = "Successfully grabbed the gun!",
+                    Icon = "check-circle",
+                    Duration = 3
+                })
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function AutoGrabGun()
+    while GunSystem.AutoGrabEnabled do
+        ScanForGunDrops()
+        if #GunSystem.ActiveGunDrops > 0 and LocalPlayer.Character then
+            local humanoidRootPart = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if humanoidRootPart then
+                local nearestGun = nil
+                local minDistance = math.huge
+                for _, gunDrop in ipairs(GunSystem.ActiveGunDrops) do
+                    local distance = (humanoidRootPart.Position - gunDrop.Position).Magnitude
+                    if distance < minDistance then
+                        nearestGun = gunDrop
+                        minDistance = distance
+                    end
+                end
+                if nearestGun then
+                    humanoidRootPart.CFrame = nearestGun.CFrame
+                    task.wait(0.3)
+                    local prompt = nearestGun:FindFirstChildOfClass("ProximityPrompt")
+                    if prompt then
+                        fireproximityprompt(prompt)
+                        task.wait(1)
+                    end
+                end
+            end
+        end
+        task.wait(GunSystem.GunDropCheckInterval)
+    end
+end
+
+-- Sheriff Functions
+local function ShootMurderer()
+    if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("Humanoid") or LocalPlayer.Character.Humanoid.Health <= 0 then
+        WindUI:Notify({
+            Title = "Shoot Error",
+            Content = "You are not alive!",
+            Icon = "x-circle",
+            Duration = 3
+        })
+        return
+    end
+    
+    local success, roles = pcall(function()
+        return ReplicatedStorage:FindFirstChild("GetPlayerData", true):InvokeServer()
+    end)
+    
+    if not success or not roles then 
+        WindUI:Notify({
+            Title = "Shoot Error",
+            Content = "Could not get player roles!",
+            Icon = "x-circle",
+            Duration = 3
+        })
+        return 
+    end
+    
+    local murderer = nil
+    for name, data in pairs(roles) do
+        if data.Role == "Murderer" then
+            murderer = Players:FindFirstChild(name)
+            break
+        end
+    end
+    
+    if not murderer or not murderer.Character or not murderer.Character:FindFirstChild("Humanoid") or murderer.Character.Humanoid.Health <= 0 then
+        WindUI:Notify({
+            Title = "Shoot Error",
+            Content = "No murderer found or murderer is dead!",
+            Icon = "x-circle",
+            Duration = 3
+        })
+        return
+    end
+    
+    local gun = LocalPlayer.Character:FindFirstChild("Gun") or LocalPlayer.Backpack:FindFirstChild("Gun")
+    if not gun then 
+        WindUI:Notify({
+            Title = "Shoot Error",
+            Content = "You don't have a gun!",
+            Icon = "x-circle",
+            Duration = 3
+        })
+        return 
+    end
+    
+    if gun and not LocalPlayer.Character:FindFirstChild("Gun") then
+        gun.Parent = LocalPlayer.Character
+    end
+    
+    gun = LocalPlayer.Character:FindFirstChild("Gun")
+    if gun and gun:FindFirstChild("KnifeLocal") then
+        local targetPart = murderer.Character:FindFirstChild("HumanoidRootPart")
+        if targetPart then
+            local args = {
+                [1] = 1,
+                [2] = targetPart.Position,
+                [3] = "AH2"
+            }
+            gun.KnifeLocal.CreateBeam.RemoteFunction:InvokeServer(unpack(args))
+            
+            WindUI:Notify({
+                Title = "Shot Fired!",
+                Content = "Shooting " .. murderer.Name .. "!",
+                Icon = "crosshair",
+                Duration = 2
+            })
+        end
+    end
+end
+
+-- Create Draggable Shoot Button
+local ShootButtonGui = Instance.new("ScreenGui")
+ShootButtonGui.Name = "ZovlaneShootButton"
+ShootButtonGui.ResetOnSpawn = false
+ShootButtonGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+local ShootButton = Instance.new("TextButton")
+ShootButton.Name = "ShootButton"
+ShootButton.Parent = ShootButtonGui
+ShootButton.AnchorPoint = Vector2.new(0.5, 0.5)
+ShootButton.Position = UDim2.new(0.5, 0, 0.15, 0)
+ShootButton.Size = UDim2.new(0, 160, 0, 70)
+ShootButton.BackgroundColor3 = Color3.new(0, 0, 0)
+ShootButton.BorderSizePixel = 0
+ShootButton.Font = Enum.Font.GothamBold
+ShootButton.Text = "SHOOT"
+ShootButton.TextColor3 = Color3.new(1, 1, 1)
+ShootButton.TextSize = 24
+ShootButton.AutoButtonColor = false
+
+-- Add corner radius
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 12)
+Corner.Parent = ShootButton
+
+-- Add stroke
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = HalloweenColors.Toxic
+Stroke.Thickness = 3
+Stroke.Transparency = 0
+Stroke.Parent = ShootButton
+
+-- Dragging functionality
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    ShootButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+end
+
+ShootButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = ShootButton.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+ShootButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
+-- Button click functionality
+ShootButton.MouseButton1Click:Connect(function()
+    -- Visual feedback
+    ShootButton.Size = UDim2.new(0, 150, 0, 65)
+    wait(0.1)
+    ShootButton.Size = UDim2.new(0, 160, 0, 70)
+    
+    -- Shoot
+    ShootMurderer()
+end)
+
+-- Initially hide the button
+ShootButtonGui.Enabled = false
+
+-- Parent to CoreGui
+local success = pcall(function()
+    ShootButtonGui.Parent = game:GetService("CoreGui")
+end)
+
+if not success then
+    ShootButtonGui.Parent = LocalPlayer.PlayerGui
+end
+
+-- ========================================
+-- TABS CREATION
+-- ========================================
+
+local MainSection = Window:Section({
+    Title = spookyGradient("Main Features", HalloweenColors.Pumpkin, HalloweenColors.Purple),
+    Icon = "flame",
+    Opened = true,
+})
+
+local WeaponSection = Window:Section({
+    Title = spookyGradient("Weapon Tools", HalloweenColors.DarkOrange, HalloweenColors.Witch),
+    Icon = "package",
+    Opened = true,
+})
+
+local ConfigSection = Window:Section({
+    Title = spookyGradient("Settings", HalloweenColors.Ghost, HalloweenColors.Purple),
+    Icon = "settings",
+    Opened = true,
+})
+
+-- */  ESP Tab  /* --
+do
+    local ESPTab = MainSection:Tab({
+        Title = "ESP",
+        Icon = "eye",
+    })
+    
+    ESPTab:Section({
+        Title = "Player ESP Settings",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    ESPTab:Toggle({
+        Flag = "HighlightESP",
+        Title = "Highlight ESP",
+        Desc = "Enable player highlighting",
+        Default = true,
+        Callback = function(state)
+            highlightEnabled = state
+            if state then
+                currentESPOptions = {"Esp All"}
+            end
+            updateESP()
+        end
+    })
+    
+    ESPTab:Space()
+    
+    ESPTab:Dropdown({
+        Flag = "ESPOptions",
+        Title = "Filter ESP",
+        Desc = "Filter which players to highlight",
+        Values = {
+            {Title = "Esp All", Icon = "users"},
+            {Title = "Esp Sheriff", Icon = "shield"},
+            {Title = "Esp Murder", Icon = "knife"},
+            {Title = "Esp Sheriff / Murder", Icon = "target"}
+        },
+        Value = "Esp All",
+        Callback = function(option)
+            currentESPOptions = {option.Title}
+            updateESP()
+        end
+    })
+    
+    ESPTab:Space()
+    
+    ESPTab:Toggle({
+        Flag = "LineESP",
+        Title = "Line ESP (Tracers)",
+        Desc = "Draw lines to players",
+        Default = false,
+        Callback = function(state)
+            lineESPEnabled = state
+            if not state then
+                for _, line in pairs(tracers) do line:Remove() end
+                tracers = {}
+            end
+            updateESP()
+        end
+    })
+end
+
+-- */  Auto Farm Tab  /* --
+do
+    local AutoFarmTab = MainSection:Tab({
+        Title = "Auto Farm",
+        Icon = "trending-up",
+    })
+    
+    AutoFarmTab:Section({
+        Title = "Coin & Candy Collection",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    AutoFarmTab:Toggle({
+        Flag = "CoinAutofarm",
+        Title = "Coin Autofarm",
+        Desc = "Automatically collect coins from the map",
+        Default = false,
+        Callback = function(state)
+            autoFarmCoins = state
+            if state then
+                visitedPositions = {}
+                collected = 0
+                WindUI:Notify({ 
+                    Title = "Coin Autofarm", 
+                    Content = "Coin farming started!", 
+                    Icon = "dollar-sign", 
+                    Duration = 3 
+                })
+            else
+                WindUI:Notify({ 
+                    Title = "Coin Autofarm", 
+                    Content = "Coin farming stopped", 
+                    Icon = "x-circle", 
+                    Duration = 3 
+                })
+            end
+        end
+    })
+    
+    AutoFarmTab:Space()
+    
+    AutoFarmTab:Toggle({
+        Flag = "CandyAutofarm",
+        Title = "Candy Autofarm",
+        Desc = "Collect Halloween candy for event rewards",
+        Default = false,
+        Callback = function(state)
+            autoFarmCandy = state
+            if state then
+                visitedPositions = {}
+                collected = 0
+                WindUI:Notify({ 
+                    Title = "Candy Autofarm", 
+                    Content = "Candy farming started!", 
+                    Icon = "candy", 
+                    Duration = 3 
+                })
+            else
+                WindUI:Notify({ 
+                    Title = "Candy Autofarm", 
+                    Content = "Candy farming stopped", 
+                    Icon = "x-circle", 
+                    Duration = 3 
+                })
+            end
+        end
+    })
+    
+    AutoFarmTab:Space()
+    
+    AutoFarmTab:Toggle({
+        Flag = "AutoEndRound",
+        Title = "Auto End Round",
+        Desc = "Auto end round and fling murderer when bag is full",
+        Default = false,
+        Callback = function(state)
+            autoEndRound = state
+            flingMurdererOnFull = state
+            if state then
+                WindUI:Notify({ 
+                    Title = "Auto End Round", 
+                    Content = "Will end round and fling murderer at " .. maxBagCapacity .. " candy", 
+                    Icon = "flag", 
+                    Duration = 3 
+                })
+            else
+                WindUI:Notify({ 
+                    Title = "Auto End Round", 
+                    Content = "Auto end round disabled", 
+                    Icon = "x-circle", 
+                    Duration = 3 
+                })
+            end
+        end
+    })
+    
+    AutoFarmTab:Space()
+    
+    AutoFarmTab:Slider({
+        Flag = "FlySpeed",
+        Title = "Autofarm Speed",
+        Desc = "Adjust collection speed",
+        Step = 1,
+        Value = {
+            Min = 5,
+            Max = 50,
+            Default = 15
+        },
+        Callback = function(value)
+            flySpeed = value
+        end
+    })
+    
+    AutoFarmTab:Space()
+    
+    AutoFarmTab:Section({
+        Title = "⚠️ Recommended: 18, higher will probably get you kicked",
+        TextSize = 14,
+        TextTransparency = 0.3,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    AutoFarmTab:Space()
+    
+    AutoFarmTab:Button({
+        Title = "Reset Counter",
+        Icon = "refresh-cw",
+        Justify = "Center",
+        Callback = function()
+            collected = 0
+            visitedPositions = {}
+            currentBagAmount = 0
+            WindUI:Notify({ 
+                Title = "Counter Reset", 
+                Content = "Collection counter reset!", 
+                Icon = "check-circle", 
+                Duration = 3 
+            })
+        end
+    })
+end
+
+-- */  Sheriff Tools Tab  /* --
+do
+    local SheriffTab = MainSection:Tab({
+        Title = "Sheriff Tools",
+        Icon = "shield",
+    })
+    
+    SheriffTab:Section({
+        Title = "Draggable Shoot Button",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    SheriffTab:Toggle({
+        Flag = "ShowShootButton",
+        Title = "Show Shoot Button",
+        Desc = "Toggle draggable shoot button on screen",
+        Default = false,
+        Callback = function(state)
+            ShootButtonGui.Enabled = state
+            if state then
+                WindUI:Notify({
+                    Title = "Shoot Button Enabled",
+                    Content = "Drag the button to move it!",
+                    Icon = "check-circle",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "Shoot Button Disabled",
+                    Content = "Button hidden from screen",
+                    Icon = "x-circle",
+                    Duration = 3
+                })
+            end
+        end
+    })
+    
+    SheriffTab:Space({ Columns = 2 })
+    
+    SheriffTab:Section({
+        Title = "Gun System",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    SheriffTab:Toggle({
+        Flag = "AutoGrabGun",
+        Title = "Auto TP to Gun",
+        Desc = "Automatically teleport to dropped gun",
+        Default = false,
+        Callback = function(state)
+            GunSystem.AutoGrabEnabled = state
+            if state then
+                coroutine.wrap(AutoGrabGun)()
+                WindUI:Notify({
+                    Title = "Auto TP to Gun",
+                    Content = "Auto grab enabled!",
+                    Icon = "check-circle",
+                    Duration = 3
+                })
+            else
+                WindUI:Notify({
+                    Title = "Auto TP to Gun",
+                    Content = "Auto grab disabled",
+                    Icon = "x-circle",
+                    Duration = 3
+                })
+            end
+        end
+    })
+    
+    SheriffTab:Space()
+    
+    SheriffTab:Button({
+        Title = "TP to Gun Manually",
+        Icon = "hand",
+        Color = HalloweenColors.Toxic,
+        Justify = "Center",
+        Callback = function()
+            GrabGun()
+        end
+    })
+    
+    SheriffTab:Space()
+    
+    SheriffTab:Section({
+        Title = "How to Use",
+        TextSize = 16,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    SheriffTab:Space()
+    
+    SheriffTab:Section({
+        Title = "• Toggle 'Show Shoot Button' to display button\n• Drag the button anywhere on screen\n• Click button to shoot murderer\n• Toggle 'Auto TP to Gun' to grab gun automatically\n• Or use manual TP button",
+        TextSize = 14,
+        TextTransparency = 0.4,
+        FontWeight = Enum.FontWeight.Regular,
+    })
+end
+
+-- */  Weapon Dupe Tab  /* --
+do
+    local WeaponDupeTab = WeaponSection:Tab({
+        Title = "Weapon Dupe",
+        Icon = "copy",
+    })
+    
+    WeaponDupeTab:Section({
+        Title = "Single Weapon Duplication",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    WeaponDupeTab:Input({
+        Flag = "DupeWeaponName",
+        Title = "Weapon Name",
+        Desc = "Enter weapon to duplicate",
+        Placeholder = "e.g., Lightbringer",
+        Callback = function(text)
+            WeaponName = text
+        end
+    })
+
+    WeaponDupeTab:Space()
+    
+    WeaponDupeTab:Input({
+        Flag = "DupeAmount",
+        Title = "Dupe Amount",
+        Desc = "How many times to duplicate",
+        Placeholder = "e.g., 5",
+        Value = "1",
+        Callback = function(text)
+            FunctionCall = tonumber(text) or 1
+        end
+    })
+
+    WeaponDupeTab:Space()
+    
+    WeaponDupeTab:Button({
+        Title = "Start Duplication",
+        Icon = "layers",
+        Color = HalloweenColors.DarkOrange,
+        Justify = "Center",
+        Callback = function()
+            if WeaponName == "" then
+                WindUI:Notify({ 
+                    Title = "Weapon Dupe Error", 
+                    Content = "Please enter a weapon name!", 
+                    Icon = "x-circle", 
+                    Duration = 5 
+                })
+                return
+            end
+            
+            WindUI:Notify({ 
+                Title = "Weapon Dupe", 
+                Content = "Duplicating " .. WeaponName .. " " .. FunctionCall .. " times...", 
+                Icon = "loader", 
+                Duration = 3 
+            })
+            
+            for i = 1, FunctionCall do
+                DuplicateWeapon()
+            end
+            
+            WindUI:Notify({ 
+                Title = "Dupe Complete", 
+                Content = "Successfully duplicated " .. WeaponName .. "!", 
+                Icon = "check-circle", 
+                Duration = 5 
+            })
+        end
+    })
+
+    WeaponDupeTab:Space({ Columns = 3 })
+    
+    WeaponDupeTab:Section({
+        Title = "Inventory Duplication",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    WeaponDupeTab:Button({
+        Title = "Dupe Entire Inventory",
+        Icon = "package",
+        Color = HalloweenColors.Witch,
+        Justify = "Center",
+        Callback = function()
+            WindUI:Notify({ 
+                Title = "Inventory Dupe", 
+                Content = "Duplicating entire inventory...", 
+                Icon = "loader", 
+                Duration = 3 
+            })
+            
+            DuplicateInventory()
+            
+            WindUI:Notify({ 
+                Title = "Inventory Dupe Complete", 
+                Content = "Successfully duplicated inventory!", 
+                Icon = "check-circle", 
+                Duration = 5 
+            })
+        end
+    })
+end
+
+-- */  Weapon Spawner Tab  /* --
+do
+    local WeaponSpawnerTab = WeaponSection:Tab({
+        Title = "Weapon Spawner",
+        Icon = "sword",
+    })
+    
+    WeaponSpawnerTab:Section({
+        Title = "Spawn Weapons",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    local weaponName = ""
+    
+    WeaponSpawnerTab:Input({
+        Flag = "WeaponName",
+        Title = "Weapon Name",
+        Desc = "Enter the name of the weapon",
+        Placeholder = "e.g., CandyBlade, Raygun",
+        Callback = function(text)
+            weaponName = text
+        end
+    })
+
+    WeaponSpawnerTab:Space()
+    
+    WeaponSpawnerTab:Button({
+        Title = "Spawn Weapon",
+        Icon = "sparkles",
+        Color = HalloweenColors.Orange,
+        Justify = "Center",
+        Callback = function()
+            if weaponName ~= "" then
+                opencrate(weaponName)
+            else
+                WindUI:Notify({
+                    Title = "Error",
+                    Content = "Please enter a weapon name!",
+                    Icon = "x-circle",
+                    Duration = 3
+                })
+            end
+        end
+    })
+
+    WeaponSpawnerTab:Space({ Columns = 2 })
+    
+    WeaponSpawnerTab:Section({
+        Title = "Quick Spawn Godlies",
+        TextSize = 16,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    WeaponSpawnerTab:Button({
+        Title = "Spawn Raygun (Battlepass)",
+        Icon = "zap",
+        Color = HalloweenColors.Toxic,
+        Callback = function()
+            opencrate("Raygun")
+        end
+    })
+    
+    WeaponSpawnerTab:Space()
+    
+    WeaponSpawnerTab:Button({
+        Title = "Spawn XenoKnife",
+        Icon = "knife",
+        Color = HalloweenColors.Blood,
+        Callback = function()
+            opencrate("XenoKnife")
+        end
+    })
+    
+    WeaponSpawnerTab:Space()
+    
+    WeaponSpawnerTab:Button({
+        Title = "Spawn XenoGun",
+        Icon = "crosshair",
+        Color = HalloweenColors.DarkPurple,
+        Callback = function()
+            opencrate("XenoGun")
+        end
+    })
+end
+
+-- */  Settings & Config Tab  /* --
+do
+    local SettingsTab = ConfigSection:Tab({
+        Title = "Settings",
+        Icon = "settings",
+    })
+    
+    SettingsTab:Section({
+        Title = "GUI Settings",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    SettingsTab:Keybind({
+        Flag = "GUIKeybind",
+        Title = "GUI Toggle Key",
+        Desc = "Press to open/close GUI",
+        Value = "V",
+        Callback = function(key)
+            Window:SetToggleKey(Enum.KeyCode[key])
+            WindUI:Notify({
+                Title = "Keybind Set",
+                Content = "GUI toggle key: " .. key,
+                Icon = "keyboard",
+                Duration = 3
+            })
+        end
+    })
+    
+    SettingsTab:Space({ Columns = 2 })
+    
+    SettingsTab:Section({
+        Title = "Config Management",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    local ConfigName = "default"
+    local ConfigManager = Window.ConfigManager
+    
+    local ConfigNameInput = SettingsTab:Input({
+        Flag = "ConfigName",
+        Title = "Config Name",
+        Desc = "Name for your configuration",
+        Icon = "file",
+        Value = ConfigName,
+        Callback = function(value)
+            ConfigName = value
+        end
+    })
+    
+    SettingsTab:Space()
+    
+    local AllConfigs = ConfigManager:AllConfigs()
+    local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
+    
+    SettingsTab:Dropdown({
+        Flag = "ConfigSelect",
+        Title = "Load Config",
+        Desc = "Select existing configuration",
+        Values = AllConfigs,
+        Value = DefaultValue,
+        Callback = function(value)
+            ConfigName = value
+            ConfigNameInput:Set(value)
+        end
+    })
+    
+    SettingsTab:Space()
+    
+    SettingsTab:Button({
+        Title = "Save Config",
+        Icon = "save",
+        Color = HalloweenColors.Toxic,
+        Justify = "Center",
+        Callback = function()
+            Window.CurrentConfig = ConfigManager:CreateConfig(ConfigName)
+            if Window.CurrentConfig:Save() then
+                WindUI:Notify({
+                    Title = "Config Saved",
+                    Content = "Saved as '" .. ConfigName .. "'",
+                    Icon = "check",
+                    Duration = 3
+                })
+            end
+        end
+    })
+    
+    SettingsTab:Space()
+    
+    SettingsTab:Button({
+        Title = "Load Config",
+        Icon = "upload",
+        Color = HalloweenColors.Purple,
+        Justify = "Center",
+        Callback = function()
+            Window.CurrentConfig = ConfigManager:CreateConfig(ConfigName)
+            if Window.CurrentConfig:Load() then
+                WindUI:Notify({
+                    Title = "Config Loaded",
+                    Content = "Loaded '" .. ConfigName .. "'",
+                    Icon = "refresh-cw",
+                    Duration = 3
+                })
+            end
+        end
+    })
+end
+
+-- */  Info Tab  /* --
+do
+    local InfoTab = ConfigSection:Tab({
+        Title = "Info",
+        Icon = "info",
+    })
+    
+    InfoTab:Section({
+        Title = "Zovlane Hub",
+        TextSize = 20,
+        FontWeight = Enum.FontWeight.Bold,
+    })
+    
+    InfoTab:Space()
+    
+    InfoTab:Section({
+        Title = "Weapon Tools & Auto Farm for MM2",
+        TextSize = 16,
+        TextTransparency = 0.3,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    InfoTab:Space({ Columns = 2 })
+    
+    InfoTab:Section({
+        Title = "Features",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    InfoTab:Space()
+    
+    InfoTab:Section({
+        Title = "• ESP (Highlight & Tracers)\n• Auto Farm Coins & Candy\n• Draggable Shoot Button\n• Auto TP to Gun\n• Weapon Duplication\n• Inventory Duplication\n• Weapon Spawner\n• Quick Spawn Godlies\n• Config Save/Load System",
+        TextSize = 15,
+        TextTransparency = 0.4,
+        FontWeight = Enum.FontWeight.Medium,
+    })
+    
+    InfoTab:Space({ Columns = 2 })
+    
+    InfoTab:Section({
+        Title = "How to Use",
+        TextSize = 18,
+        FontWeight = Enum.FontWeight.SemiBold,
+    })
+    
+    InfoTab:Space()
+    
+    InfoTab:Section({
+        Title = "• ESP: Enable highlighting and choose filter type\n• Auto Farm: Toggle coin/candy collection\n• Sheriff: Toggle shoot button and auto gun TP\n• Weapon Dupe: Enter weapon name and amount\n• Weapon Spawner: Enter weapon name to spawn\n• Press V to toggle the GUI on/off",
+        TextSize = 14,
+        TextTransparency = 0.4,
+        FontWeight = Enum.FontWeight.Regular,
+    })
+end
+
+-- ========================================
+-- INITIALIZATION
+-- ========================================
+
+-- Initialize ESP
+updateESP()
+
+-- Connect ESP updates
+RunService.RenderStepped:Connect(function()
+    if not lineESPEnabled then return end
+    for player, line in pairs(tracers) do
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = player.Character.HumanoidRootPart
+            local screenPos, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(hrp.Position)
+            local rootGuiSize = Workspace.CurrentCamera.ViewportSize
+            if onScreen then
+                line.From = Vector2.new(rootGuiSize.X / 2, rootGuiSize.Y)
+                line.To = Vector2.new(screenPos.X, screenPos.Y)
+                line.Visible = true
+            else
+                line.Visible = false
+            end
+        else
+            line.Visible = false
+        end
+    end
+end)
+
+-- Monitor player changes for ESP
+local function monitorPlayer(player)
+    player.CharacterAdded:Connect(function()
+        local backpack = player:WaitForChild("Backpack")
+        backpack.ChildAdded:Connect(updateESP)
+        backpack.ChildRemoved:Connect(updateESP)
+        updateESP()
+    end)
+
+    if player.Character then
+        local backpack = player:FindFirstChild("Backpack")
+        if backpack then
+            backpack.ChildAdded:Connect(updateESP)
+            backpack.ChildRemoved:Connect(updateESP)
+        end
+    end
+end
+
+for _, player in ipairs(Players:GetPlayers()) do monitorPlayer(player) end
+Players.PlayerAdded:Connect(monitorPlayer)
+
+-- Player removal handling
+Players.PlayerRemoving:Connect(function(player)
+    if player == LocalPlayer then
+        for _, line in pairs(tracers) do
+            if line then line:Remove() end
+        end
+        tracers = {}
+    end
+end)
+
+-- Initialize gun system
+task.spawn(function()
+    if not LocalPlayer.Character then
+        LocalPlayer.CharacterAdded:Wait()
+    end
+    ScanForGunDrops()
+    if GunSystem.AutoGrabEnabled then
+        coroutine.wrap(AutoGrabGun)()
+    end
+end)
+
+-- Set default keybind
+Window:SetToggleKey(Enum.KeyCode.V)
+
+-- Config setup
+Window.CurrentConfig = Window.ConfigManager:CreateConfig("default")
+Window.CurrentConfig:Save()
+
+-- Welcome notification
+WindUI:Notify({
+    Title = spookyGradient("Zovlane Hub Loaded!", HalloweenColors.Pumpkin, HalloweenColors.Purple),
+    Content = "All features ready! Press V to toggle GUI.",
+    Icon = "package",
+    Duration = 5
+})
